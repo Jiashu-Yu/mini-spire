@@ -215,6 +215,95 @@ void drawVisualEffect(sf::RenderWindow& window, const ResourceManager& resources
     }
 }
 
+void drawMenuCard(sf::RenderWindow& window, sf::Vector2f center, sf::Vector2f size, float rotation, sf::Color fill, sf::Color outline)
+{
+    sf::RectangleShape card(size);
+    card.setOrigin(size.x / 2.0F, size.y / 2.0F);
+    card.setPosition(center);
+    card.setRotation(rotation);
+    card.setFillColor(fill);
+    card.setOutlineColor(outline);
+    card.setOutlineThickness(2.0F);
+    window.draw(card);
+
+    sf::RectangleShape inner({size.x - 14.0F, size.y - 18.0F});
+    inner.setOrigin(inner.getSize().x / 2.0F, inner.getSize().y / 2.0F);
+    inner.setPosition(center);
+    inner.setRotation(rotation);
+    inner.setFillColor(sf::Color(26, 42, 52, 120));
+    inner.setOutlineColor(sf::Color(outline.r, outline.g, outline.b, 100));
+    inner.setOutlineThickness(1.0F);
+    window.draw(inner);
+}
+
+void drawMainMenuBackground(sf::RenderWindow& window)
+{
+    sf::RectangleShape base({ui::WindowWidth, ui::WindowHeight});
+    base.setFillColor(sf::Color(17, 17, 24));
+    window.draw(base);
+
+    const sf::Vector2f glowCenter {695.0F, 192.0F};
+    for (int i = 0; i < 18; ++i) {
+        const float radius = 360.0F - static_cast<float>(i) * 16.0F;
+        sf::CircleShape glow(radius);
+        glow.setOrigin(radius, radius);
+        glow.setPosition(glowCenter.x, glowCenter.y + static_cast<float>(i) * 4.0F);
+        glow.setFillColor(sf::Color(255, static_cast<sf::Uint8>(120 + i * 3), 45, static_cast<sf::Uint8>(8 + i)));
+        window.draw(glow);
+    }
+
+    const std::array<sf::Vector3f, 18> clouds {{
+        {90.0F, 120.0F, 140.0F}, {220.0F, 92.0F, 190.0F}, {385.0F, 126.0F, 180.0F},
+        {560.0F, 112.0F, 220.0F}, {760.0F, 98.0F, 230.0F}, {960.0F, 128.0F, 210.0F},
+        {1135.0F, 115.0F, 170.0F}, {150.0F, 318.0F, 220.0F}, {362.0F, 302.0F, 250.0F},
+        {620.0F, 286.0F, 280.0F}, {872.0F, 304.0F, 260.0F}, {1092.0F, 322.0F, 230.0F},
+        {70.0F, 560.0F, 210.0F}, {270.0F, 586.0F, 240.0F}, {520.0F, 570.0F, 230.0F},
+        {780.0F, 584.0F, 250.0F}, {1035.0F, 565.0F, 240.0F}, {1220.0F, 590.0F, 180.0F},
+    }};
+    for (std::size_t i = 0; i < clouds.size(); ++i) {
+        const auto cloud = clouds.at(i);
+        sf::CircleShape puff(cloud.z);
+        puff.setOrigin(cloud.z, cloud.z);
+        puff.setPosition(cloud.x, cloud.y);
+        const sf::Uint8 alpha = static_cast<sf::Uint8>(34 + (i % 4) * 8);
+        puff.setFillColor(i % 3 == 0 ? sf::Color(88, 42, 43, alpha) : sf::Color(34, 38, 58, alpha));
+        puff.setScale(1.45F, 0.72F);
+        window.draw(puff);
+    }
+
+    sf::ConvexShape tower;
+    tower.setPointCount(4);
+    tower.setPoint(0, {642.0F, 198.0F});
+    tower.setPoint(1, {724.0F, 182.0F});
+    tower.setPoint(2, {905.0F, ui::WindowHeight + 95.0F});
+    tower.setPoint(3, {740.0F, ui::WindowHeight + 110.0F});
+    tower.setFillColor(sf::Color(28, 25, 28, 235));
+    tower.setOutlineColor(sf::Color(164, 87, 55, 115));
+    tower.setOutlineThickness(2.0F);
+    window.draw(tower);
+
+    for (int i = 0; i < 18; ++i) {
+        sf::RectangleShape windowLight({8.0F, 16.0F});
+        windowLight.setOrigin(4.0F, 8.0F);
+        windowLight.setPosition(705.0F + static_cast<float>(i % 3) * 23.0F + static_cast<float>(i) * 5.2F,
+                                262.0F + static_cast<float>(i) * 28.0F);
+        windowLight.setRotation(14.0F);
+        windowLight.setFillColor(sf::Color(231, 128, 62, static_cast<sf::Uint8>(70 + (i % 4) * 28)));
+        window.draw(windowLight);
+    }
+
+    drawMenuCard(window, {94.0F, 215.0F}, {104.0F, 146.0F}, -20.0F, sf::Color(30, 83, 91, 135), sf::Color(109, 183, 165, 115));
+    drawMenuCard(window, {214.0F, 650.0F}, {86.0F, 122.0F}, 18.0F, sf::Color(76, 55, 84, 130), sf::Color(190, 119, 180, 105));
+    drawMenuCard(window, {1072.0F, 130.0F}, {76.0F, 108.0F}, 26.0F, sf::Color(62, 84, 105, 120), sf::Color(149, 185, 213, 100));
+    drawMenuCard(window, {1134.0F, 620.0F}, {92.0F, 130.0F}, -31.0F, sf::Color(74, 83, 55, 120), sf::Color(174, 187, 108, 100));
+    drawMenuCard(window, {462.0F, 96.0F}, {58.0F, 84.0F}, 15.0F, sf::Color(54, 76, 105, 115), sf::Color(123, 164, 214, 90));
+    drawMenuCard(window, {795.0F, 630.0F}, {60.0F, 88.0F}, -12.0F, sf::Color(88, 64, 48, 112), sf::Color(214, 154, 99, 88));
+
+    sf::RectangleShape shade({ui::WindowWidth, ui::WindowHeight});
+    shade.setFillColor(sf::Color(5, 6, 11, 108));
+    window.draw(shade);
+}
+
 void drawTopBar(sf::RenderWindow& window, GameApp& app)
 {
     const Player& player = app.runState().player();
@@ -246,8 +335,8 @@ class MainMenuScene final : public Scene {
 public:
     explicit MainMenuScene(GameApp& app)
         : Scene(app)
-        , startButton_({505.0F, 430.0F, 270.0F, 56.0F}, "开始爬塔")
-        , quitButton_({505.0F, 500.0F, 270.0F, 48.0F}, "退出")
+        , startButton_({514.0F, 418.0F, 252.0F, 56.0F}, "开始")
+        , quitButton_({514.0F, 490.0F, 252.0F, 50.0F}, "退出")
     {
     }
 
@@ -265,16 +354,12 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
-        sf::RectangleShape glow({ui::WindowWidth, ui::WindowHeight});
-        glow.setFillColor(ui::backgroundColor());
-        window.draw(glow);
+        drawMainMenuBackground(window);
 
-        ui::drawText(window, app_.resources(), "Mini Spire", {412.0F, 118.0F}, 66, ui::accentColor());
-        ui::drawText(window, app_.resources(), "原创卡牌构筑 / 回合制战斗 / OOP 练习项目", {380.0F, 205.0F}, 24, sf::Color(225, 219, 203));
-
-        ui::drawPanel(window, {270.0F, 275.0F, 740.0F, 104.0F}, sf::Color(34, 39, 55), sf::Color(89, 98, 124), 1.0F);
-        ui::drawText(window, app_.resources(), "核心设计：卡牌由 Effect 组合，战斗由 CombatState 统一解释，界面只负责表现与输入。", {306.0F, 306.0F}, 20);
-        ui::drawText(window, app_.resources(), "这会让新增卡牌、敌人、场景时不必重写主循环。", {306.0F, 338.0F}, 18, sf::Color(206, 210, 226));
+        sf::Text shadow = ui::makeText(app_.resources(), "Mini Spire", 78, sf::Color(0, 0, 0, 190));
+        shadow.setPosition(416.0F, 146.0F);
+        window.draw(shadow);
+        ui::drawText(window, app_.resources(), "Mini Spire", {410.0F, 138.0F}, 78, sf::Color(255, 193, 91));
 
         if (!app_.resources().fontLoaded()) {
             ui::drawText(window, app_.resources(), "警告：没有找到字体，文字可能不可见。请安装微软雅黑或把字体放入 assets/fonts。", {260.0F, 650.0F}, 16, sf::Color(255, 160, 140));
