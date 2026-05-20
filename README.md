@@ -7,10 +7,12 @@ Mini Spire 是一个用 **C++ + SFML** 实现的原创卡牌爬塔游戏竖切�
 ## 当前内容
 
 - 1 名角色：裂隙旅人
-- 12 张初始牌，20 张奖励卡牌
-- 3 个普通敌人、1 个精英敌人、1 个 Boss
+- 12 张初始牌，32 张奖励卡牌
+- 6 个普通敌人、3 个精英敌人、3 个 Boss
+- 3 层爬塔流程，每层击败 Boss 后领取奖励并进入下一层
 - 地图、战斗、奖励、商店、休息、事件、胜利/失败界面
 - 鼠标点击操作、卡牌 hover、血条、格挡、敌人意图、战斗日志
+- 程序化角色/敌人造型、卡牌效果徽章、攻击/护盾/治疗/状态战斗特效
 - 纯逻辑测试：战斗起手、能量消耗、伤害、格挡、地图解锁、奖励生成
 
 ## 游戏操作
@@ -20,7 +22,8 @@ Mini Spire 是一个用 **C++ + SFML** 实现的原创卡牌爬塔游戏竖切�
 - 战斗中点击手牌出牌。
 - 点击 `结束回合` 让敌人行动。
 - 战斗胜利后选择一张奖励牌，或跳过拿金币。
-- 击败最终 Boss 后通关。
+- 每层击败 Boss 后选择一份 Boss 奖励并进入下一层。
+- 第三层击败最终 Boss 后通关。
 
 ## 环境要求
 
@@ -217,7 +220,7 @@ src/core/
 src/app/
   GameApp.cpp   窗口、资源、场景切换
   Scenes.cpp    主菜单、地图、战斗、奖励、商店等场景
-  UI.cpp        按钮、卡牌、血条、角色面板
+  UI.cpp        按钮、卡牌、血条、角色面板、程序化头像/敌人造型
 
 tests/
   core_tests.cpp  纯规则层测试
@@ -285,13 +288,32 @@ UI 不直接修改生命和牌堆，而是调用 `CombatState` 的公开接口�
 
 - 玩家状态
 - 当前牌组
+- 当前 Act
 - 地图节点
 - 当前楼层
 - 战斗奖励
 - 商店卡牌
 - 休息和事件
+- 进入下一层
 
 它相当于“整局游戏的导演”。
+
+### 角色、Boss 形象和战斗特效
+
+当前版本先用 SFML 几何图元绘制角色和敌人：
+
+- `ui::drawPlayerSprite` 绘制玩家头像。
+- `ui::drawEnemySprite` 根据 `EnemyKind` 绘制不同敌人/Boss 的颜色、轮廓和标记。
+- `CombatScene` 中的 `VisualEffect` 负责攻击、护盾、治疗、能量、Debuff、Boss 脉冲等短动画。
+- `ui::drawCard` 会根据卡牌的 `Effect` 在卡牌底部画效果徽章。
+
+如果以后要换成真正的 PNG/Sprite 素材，推荐做法是：
+
+1. 在 `assets/images/` 下放入图片，例如 `player.png`、`boss_root_matriarch.png`。
+2. 在 `ResourceManager` 中增加 `sf::Texture` 缓存。
+3. 在 `drawPlayerSprite` / `drawEnemySprite` 中优先绘制贴图，贴图不存在时保留当前程序化绘制作为 fallback。
+
+这样不会影响 `CombatState`、`RunController` 等规则层代码。
 
 ## 后续扩展建议
 
@@ -301,3 +323,4 @@ UI 不直接修改生命和牌堆，而是调用 `CombatState` 的公开接口�
 4. 给 `CombatState` 增加更细的事件类型，用于动画和音效。
 5. 增加存档系统，保存当前 run。
 6. 增加 Release 构建和 GitHub Releases，方便别人直接下载 exe 游玩。
+7. 用真实 PNG/Sprite 替换当前程序化角色和 Boss 造型。

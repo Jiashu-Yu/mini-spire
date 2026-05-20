@@ -262,10 +262,28 @@ EnemyMove Enemy::takeMove()
 
 void Enemy::onHalfHealth()
 {
-    if (kind_ == EnemyKind::SpireArchitect && !halfHealthTriggered_ && hp() <= maxHp() / 2) {
+    if (halfHealthTriggered_ || hp() > maxHp() / 2) {
+        return;
+    }
+
+    switch (kind_) {
+    case EnemyKind::RootMatriarch:
         halfHealthTriggered_ = true;
-        addStatus(StatusType::Strength, 3);
-        gainBlock(12);
+        addStatus(StatusType::Ritual, 1);
+        gainBlock(18);
+        break;
+    case EnemyKind::ClockworkDragon:
+        halfHealthTriggered_ = true;
+        addStatus(StatusType::Strength, 4);
+        gainBlock(20);
+        break;
+    case EnemyKind::SpireArchitect:
+        halfHealthTriggered_ = true;
+        addStatus(StatusType::Strength, 5);
+        gainBlock(24);
+        break;
+    default:
+        break;
     }
 }
 
@@ -514,6 +532,9 @@ void CombatState::runEnemyTurn()
 {
     enemy_.clearBlock();
     enemy_.onHalfHealth();
+    if (enemy_.status(StatusType::Ritual) > 0) {
+        enemy_.addStatus(StatusType::Strength, enemy_.status(StatusType::Ritual));
+    }
     const EnemyMove move = enemy_.takeMove();
     log(enemy_.name() + " 行动：" + move.name);
     applyEnemyMove(move);
@@ -643,6 +664,7 @@ void RunController::startNewRun(std::uint32_t seed)
     deck_ = starterDeck();
     activeNodeId_.reset();
     floor_ = 0;
+    act_ = 1;
     active_ = true;
     won_ = false;
     generateMap();
@@ -692,6 +714,35 @@ const std::optional<int>& RunController::activeNodeId() const
 int RunController::floor() const
 {
     return floor_;
+}
+
+int RunController::act() const
+{
+    return act_;
+}
+
+int RunController::maxActs() const
+{
+    return maxActs_;
+}
+
+bool RunController::finalAct() const
+{
+    return act_ >= maxActs_;
+}
+
+std::string RunController::actName() const
+{
+    switch (act_) {
+    case 1:
+        return "第一层：灰烬地牢";
+    case 2:
+        return "第二层：晶化温室";
+    case 3:
+        return "第三层：星钟尖塔";
+    default:
+        return "未知层";
+    }
 }
 
 std::vector<int> RunController::availableNodeIds() const
@@ -770,17 +821,34 @@ Enemy RunController::makeEnemyForActiveNode()
     }
 
     if (node->type == NodeType::Boss) {
+        if (act_ == 1) {
+            return makeEnemy(EnemyKind::RootMatriarch, floor_);
+        }
+        if (act_ == 2) {
+            return makeEnemy(EnemyKind::ClockworkDragon, floor_);
+        }
         return makeEnemy(EnemyKind::SpireArchitect, floor_);
     }
     if (node->type == NodeType::Elite) {
-        return makeEnemy(EnemyKind::IronSentinel, floor_);
+        if (act_ == 1) {
+            return makeEnemy(EnemyKind::IronSentinel, floor_);
+        }
+        if (act_ == 2) {
+            return makeEnemy(EnemyKind::EmberDuelist, floor_);
+        }
+        return makeEnemy(EnemyKind::ChronoKnight, floor_);
     }
 
-    const std::vector<EnemyKind> normal {
+    std::vector<EnemyKind> normal {
         EnemyKind::AshCultist,
         EnemyKind::AcidSlime,
         EnemyKind::BellGuard,
     };
+    if (act_ == 2) {
+        normal = {EnemyKind::ThornLurker, EnemyKind::CrystalWisp, EnemyKind::BellGuard};
+    } else if (act_ >= 3) {
+        normal = {EnemyKind::NullPriest, EnemyKind::CrystalWisp, EnemyKind::ThornLurker};
+    }
     return makeEnemy(randomElement(normal, rng_), floor_);
 }
 
@@ -816,6 +884,18 @@ void RunController::syncPlayerAfterCombat(const Player& player)
     player_.setGold(gold);
 }
 
+void RunController::startNextAct()
+{
+    if (finalAct()) {
+        won_ = true;
+        return;
+    }
+    ++act_;
+    activeNodeId_.reset();
+    generateMap();
+    unlockInitialNodes();
+}
+
 void RunController::rest()
 {
     player_.heal(22);
@@ -833,16 +913,48 @@ void RunController::eventHeal()
 
 void RunController::generateMap()
 {
+    if (act_ == 1) {
+        map_ = {
+            {0, 0, 0, NodeType::Battle, {2, 3}, false, false},
+            {1, 0, 1, NodeType::Battle, {3, 4}, false, false},
+            {2, 1, 0, NodeType::Event, {5}, false, false},
+            {3, 1, 1, NodeType::Battle, {5, 6}, false, false},
+            {4, 1, 2, NodeType::Shop, {6}, false, false},
+            {5, 2, 0, NodeType::Elite, {7}, false, false},
+            {6, 2, 1, NodeType::Rest, {7}, false, false},
+            {7, 3, 0, NodeType::Battle, {8}, false, false},
+            {8, 4, 0, NodeType::Boss, {}, false, false},
+        };
+        return;
+    }
+
+    if (act_ == 2) {
+        map_ = {
+            {0, 0, 0, NodeType::Battle, {3, 4}, false, false},
+            {1, 0, 1, NodeType::Event, {4, 5}, false, false},
+            {2, 0, 2, NodeType::Battle, {5}, false, false},
+            {3, 1, 0, NodeType::Shop, {6}, false, false},
+            {4, 1, 1, NodeType::Battle, {6, 7}, false, false},
+            {5, 1, 2, NodeType::Elite, {7}, false, false},
+            {6, 2, 0, NodeType::Battle, {8}, false, false},
+            {7, 2, 1, NodeType::Rest, {8}, false, false},
+            {8, 3, 0, NodeType::Elite, {9}, false, false},
+            {9, 4, 0, NodeType::Boss, {}, false, false},
+        };
+        return;
+    }
+
     map_ = {
-        {0, 0, 0, NodeType::Battle, {2, 3}, false, false},
-        {1, 0, 1, NodeType::Battle, {3, 4}, false, false},
-        {2, 1, 0, NodeType::Event, {5}, false, false},
-        {3, 1, 1, NodeType::Battle, {5, 6}, false, false},
-        {4, 1, 2, NodeType::Shop, {6}, false, false},
+        {0, 0, 0, NodeType::Battle, {3}, false, false},
+        {1, 0, 1, NodeType::Elite, {3, 4}, false, false},
+        {2, 0, 2, NodeType::Battle, {4}, false, false},
+        {3, 1, 0, NodeType::Event, {5, 6}, false, false},
+        {4, 1, 1, NodeType::Shop, {6}, false, false},
         {5, 2, 0, NodeType::Elite, {7}, false, false},
-        {6, 2, 1, NodeType::Rest, {7}, false, false},
-        {7, 3, 0, NodeType::Battle, {8}, false, false},
-        {8, 4, 0, NodeType::Boss, {}, false, false},
+        {6, 2, 1, NodeType::Battle, {7, 8}, false, false},
+        {7, 3, 0, NodeType::Rest, {9}, false, false},
+        {8, 3, 1, NodeType::Elite, {9}, false, false},
+        {9, 4, 0, NodeType::Boss, {}, false, false},
     };
 }
 
@@ -951,6 +1063,30 @@ std::vector<Card> cardPool()
                  {{EffectType::Heal, 4}, {EffectType::Draw, 1}}),
         makeCard("overrun", "压制", 2, CardType::Attack, "普通", "造成 14 伤害\n施加 1 易伤",
                  {{EffectType::Damage, 14}, {EffectType::Vulnerable, 1}}),
+        makeCard("moon_cut", "月弧斩", 1, CardType::Attack, "普通", "造成 8 伤害\n获得 4 格挡",
+                 {{EffectType::Damage, 8}, {EffectType::Block, 4}}),
+        makeCard("chain_guard", "锁链防御", 1, CardType::Skill, "普通", "获得 7 格挡\n施加 1 虚弱",
+                 {{EffectType::Block, 7}, {EffectType::Weak, 1}}),
+        makeCard("quick_step", "疾步", 0, CardType::Skill, "普通", "抽 2 张牌\n消耗",
+                 {{EffectType::Draw, 2}}, true),
+        makeCard("heavy_lance", "重枪突刺", 2, CardType::Attack, "普通", "造成 18 伤害\n施加 1 易伤",
+                 {{EffectType::Damage, 18}, {EffectType::Vulnerable, 1}}),
+        makeCard("iron_skin", "铁肤", 2, CardType::Skill, "普通", "获得 14 格挡\n力量 +1",
+                 {{EffectType::Block, 14}, {EffectType::Strength, 1}}),
+        makeCard("blood_pact", "血契", 1, CardType::Power, "稀有", "力量 +3\n回复 3 生命",
+                 {{EffectType::Strength, 3}, {EffectType::Heal, 3}}),
+        makeCard("starfall", "星坠", 3, CardType::Attack, "稀有", "造成 20 伤害\n施加 2 易伤",
+                 {{EffectType::Damage, 20}, {EffectType::Vulnerable, 2}}),
+        makeCard("aegis_bloom", "盾花绽放", 2, CardType::Skill, "稀有", "获得 10 格挡\n回复 8 生命",
+                 {{EffectType::Block, 10}, {EffectType::Heal, 8}}),
+        makeCard("clockwork", "发条连携", 1, CardType::Skill, "稀有", "获得 1 能量\n抽 2 张牌\n消耗",
+                 {{EffectType::GainEnergy, 1}, {EffectType::Draw, 2}}, true),
+        makeCard("sun_spear", "日冕枪", 2, CardType::Attack, "稀有", "造成 12 伤害\n力量 +2",
+                 {{EffectType::Damage, 12}, {EffectType::Strength, 2}}),
+        makeCard("void_mark", "虚空印记", 1, CardType::Attack, "普通", "造成 5 伤害\n施加 2 虚弱",
+                 {{EffectType::Damage, 5}, {EffectType::Weak, 2}}),
+        makeCard("deep_breath", "深呼吸", 0, CardType::Skill, "普通", "回复 3 生命\n获得 3 格挡",
+                 {{EffectType::Heal, 3}, {EffectType::Block, 3}}),
     };
 }
 
@@ -991,6 +1127,61 @@ Enemy makeEnemy(EnemyKind kind, int floor)
                 {"震音", "易伤 1", 5, 1, 0, 0, 1, 0},
             },
         };
+    case EnemyKind::ThornLurker:
+        return Enemy {
+            kind,
+            "棘藤伏击者",
+            54 + scale * 2,
+            {
+                {"藤刺", "攻击 8 + 虚弱", 8, 1, 0, 0, 0, 1},
+                {"扎根", "格挡 12", 0, 1, 12, 0, 0, 0},
+                {"缠绕", "攻击 6x2", 6, 2, 0, 0, 0, 0},
+            },
+        };
+    case EnemyKind::CrystalWisp:
+        return Enemy {
+            kind,
+            "晶尘幽光",
+            46 + scale * 2,
+            {
+                {"折射", "格挡 8 + 力量", 0, 1, 8, 1, 0, 0},
+                {"晶刺", "攻击 11", 11, 1, 0, 0, 0, 0},
+                {"眩光", "易伤 1 + 虚弱 1", 0, 1, 0, 0, 1, 1},
+            },
+        };
+    case EnemyKind::EmberDuelist:
+        return Enemy {
+            kind,
+            "余烬决斗者",
+            88 + scale * 3,
+            {
+                {"试探", "攻击 8x2", 8, 2, 0, 0, 0, 0},
+                {"架势", "格挡 14 + 力量", 0, 1, 14, 2, 0, 0},
+                {"破绽斩", "攻击 20 + 易伤", 20, 1, 0, 0, 1, 0},
+            },
+        };
+    case EnemyKind::NullPriest:
+        return Enemy {
+            kind,
+            "虚无祭司",
+            66 + scale * 2,
+            {
+                {"低语", "虚弱 2", 0, 1, 0, 0, 0, 2},
+                {"空洞脉冲", "攻击 13", 13, 1, 0, 0, 0, 0},
+                {"献祭", "力量 +3 + 格挡", 0, 1, 10, 3, 0, 0},
+            },
+        };
+    case EnemyKind::ChronoKnight:
+        return Enemy {
+            kind,
+            "刻时骑士",
+            104 + scale * 3,
+            {
+                {"秒针突刺", "攻击 6x3", 6, 3, 0, 0, 0, 0},
+                {"钟甲", "格挡 18", 0, 1, 18, 0, 0, 0},
+                {"终刻", "攻击 24 + 易伤", 24, 1, 0, 0, 2, 0},
+            },
+        };
     case EnemyKind::IronSentinel:
         return Enemy {
             kind,
@@ -1002,11 +1193,35 @@ Enemy makeEnemy(EnemyKind kind, int floor)
                 {"处刑", "攻击 18", 18, 1, 0, 0, 0, 0},
             },
         };
+    case EnemyKind::RootMatriarch:
+        return Enemy {
+            kind,
+            "根须主母",
+            118 + scale * 2,
+            {
+                {"荆冠", "格挡 16 + 力量", 0, 1, 16, 2, 0, 0},
+                {"根须拍击", "攻击 9x2", 9, 2, 0, 0, 0, 0},
+                {"花粉云", "虚弱 2 + 易伤 1", 0, 1, 0, 0, 1, 2},
+                {"碾压", "攻击 21", 21, 1, 0, 0, 0, 0},
+            },
+        };
+    case EnemyKind::ClockworkDragon:
+        return Enemy {
+            kind,
+            "发条龙",
+            152 + scale * 2,
+            {
+                {"齿轮吐息", "攻击 8x3", 8, 3, 0, 0, 0, 0},
+                {"装甲闭合", "格挡 24", 0, 1, 24, 0, 0, 0},
+                {"过载", "力量 +4", 0, 1, 0, 4, 0, 0},
+                {"熔芯撕咬", "攻击 26 + 易伤", 26, 1, 0, 0, 1, 0},
+            },
+        };
     case EnemyKind::SpireArchitect:
         return Enemy {
             kind,
             "尖塔建筑师",
-            128,
+            188 + scale,
             {
                 {"校准核心", "格挡 14 + 力量", 0, 1, 14, 2, 0, 0},
                 {"光束阵列", "攻击 7x3", 7, 3, 0, 0, 0, 0},

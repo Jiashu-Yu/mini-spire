@@ -74,6 +74,17 @@ void drawCreaturePanel(sf::RenderWindow& window,
                        sf::FloatRect rect,
                        const std::string& subtitle);
 
+void drawPlayerSprite(sf::RenderWindow& window,
+                      const ResourceManager& resources,
+                      sf::Vector2f center,
+                      float scale);
+
+void drawEnemySprite(sf::RenderWindow& window,
+                    const ResourceManager& resources,
+                    EnemyKind kind,
+                    sf::Vector2f center,
+                    float scale);
+
 void drawStatusLine(sf::RenderWindow& window,
                     const ResourceManager& resources,
                     const Creature& creature,

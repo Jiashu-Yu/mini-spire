@@ -73,12 +73,30 @@ void testRunMapUnlocksNextNodes()
 {
     RunController run;
     run.startNewRun(42);
+    assert(run.act() == 1);
     assert(run.availableNodeIds().size() == 2);
     const int first = run.availableNodeIds().front();
     assert(run.selectNode(first));
     run.completeActiveNode();
     assert(!run.availableNodeIds().empty());
     assert(run.floor() == 1);
+}
+
+void testRunAdvancesAcrossThreeActs()
+{
+    RunController run;
+    run.startNewRun(42);
+    assert(run.actName() == "第一层：灰烬地牢");
+
+    run.startNextAct();
+    assert(run.act() == 2);
+    assert(!run.finalAct());
+    assert(run.availableNodeIds().size() == 3);
+
+    run.startNextAct();
+    assert(run.act() == 3);
+    assert(run.finalAct());
+    assert(run.availableNodeIds().size() == 3);
 }
 
 void testRewardsComeFromPool()
@@ -101,6 +119,7 @@ int main()
     testCardSpendsEnergyAndDealsDamage();
     testBlockPreventsEnemyDamage();
     testRunMapUnlocksNextNodes();
+    testRunAdvancesAcrossThreeActs();
     testRewardsComeFromPool();
 
     std::cout << "All Mini Spire core tests passed.\n";

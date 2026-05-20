@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace minispire {
 namespace {
@@ -38,6 +39,78 @@ sf::FloatRect rewardCardRect(std::size_t index)
 std::uint32_t randomSeed()
 {
     return std::random_device{}();
+}
+
+enum class VisualEffectKind {
+    Slash,
+    Shield,
+    Heal,
+    Energy,
+    Debuff,
+    EnemyStrike,
+    BossPulse
+};
+
+struct VisualEffect {
+    VisualEffectKind kind {};
+    sf::Vector2f start {};
+    sf::Vector2f end {};
+    float age {0.0F};
+    float duration {0.55F};
+    sf::Color color {sf::Color::White};
+    std::string label;
+};
+
+sf::Color visualColorForEffect(EffectType type)
+{
+    switch (type) {
+    case EffectType::Damage:
+        return sf::Color(242, 88, 70);
+    case EffectType::Block:
+        return sf::Color(98, 181, 245);
+    case EffectType::Draw:
+        return sf::Color(164, 122, 235);
+    case EffectType::Strength:
+        return sf::Color(242, 174, 76);
+    case EffectType::Vulnerable:
+        return sf::Color(246, 126, 72);
+    case EffectType::Weak:
+        return sf::Color(118, 148, 198);
+    case EffectType::Heal:
+        return sf::Color(90, 210, 130);
+    case EffectType::GainEnergy:
+        return sf::Color(244, 218, 74);
+    case EffectType::Ritual:
+        return sf::Color(198, 98, 232);
+    }
+    return sf::Color::White;
+}
+
+VisualEffectKind visualKindForEffect(EffectType type)
+{
+    switch (type) {
+    case EffectType::Damage:
+        return VisualEffectKind::Slash;
+    case EffectType::Block:
+        return VisualEffectKind::Shield;
+    case EffectType::Heal:
+        return VisualEffectKind::Heal;
+    case EffectType::GainEnergy:
+    case EffectType::Draw:
+    case EffectType::Strength:
+    case EffectType::Ritual:
+        return VisualEffectKind::Energy;
+    case EffectType::Vulnerable:
+    case EffectType::Weak:
+        return VisualEffectKind::Debuff;
+    }
+    return VisualEffectKind::Energy;
+}
+
+float easeOut(float t)
+{
+    t = std::clamp(t, 0.0F, 1.0F);
+    return 1.0F - (1.0F - t) * (1.0F - t);
 }
 
 int nodesInRow(const std::vector<MapNode>& nodes, int row)
@@ -75,6 +148,73 @@ std::string nodeGlyph(NodeType type)
     return "?";
 }
 
+void drawVisualEffect(sf::RenderWindow& window, const ResourceManager& resources, const VisualEffect& effect)
+{
+    const float t = std::clamp(effect.age / std::max(0.01F, effect.duration), 0.0F, 1.0F);
+    const float k = easeOut(t);
+    const sf::Vector2f pos {
+        effect.start.x + (effect.end.x - effect.start.x) * k,
+        effect.start.y + (effect.end.y - effect.start.y) * k,
+    };
+    sf::Color color = effect.color;
+    color.a = static_cast<sf::Uint8>(std::max(0.0F, 220.0F * (1.0F - t)));
+
+    switch (effect.kind) {
+    case VisualEffectKind::Slash: {
+        sf::RectangleShape slash({132.0F * (1.0F + t), 9.0F});
+        slash.setOrigin(66.0F * (1.0F + t), 4.5F);
+        slash.setPosition(pos);
+        slash.setRotation(-24.0F);
+        slash.setFillColor(color);
+        window.draw(slash);
+        break;
+    }
+    case VisualEffectKind::Shield: {
+        sf::CircleShape ring(44.0F + 22.0F * t);
+        ring.setOrigin(44.0F + 22.0F * t, 44.0F + 22.0F * t);
+        ring.setPosition(pos);
+        ring.setFillColor(sf::Color::Transparent);
+        ring.setOutlineColor(color);
+        ring.setOutlineThickness(5.0F * (1.0F - t));
+        window.draw(ring);
+        break;
+    }
+    case VisualEffectKind::Heal:
+    case VisualEffectKind::Energy:
+    case VisualEffectKind::Debuff:
+    case VisualEffectKind::BossPulse: {
+        const int particles = effect.kind == VisualEffectKind::BossPulse ? 12 : 6;
+        for (int i = 0; i < particles; ++i) {
+            const float angle = (static_cast<float>(i) / static_cast<float>(particles)) * 6.28318F;
+            const float radius = (28.0F + 56.0F * t);
+            sf::CircleShape spark(effect.kind == VisualEffectKind::BossPulse ? 7.0F : 5.0F);
+            spark.setOrigin(spark.getRadius(), spark.getRadius());
+            spark.setPosition(pos.x + std::cos(angle) * radius, pos.y + std::sin(angle) * radius);
+            spark.setFillColor(color);
+            window.draw(spark);
+        }
+        break;
+    }
+    case VisualEffectKind::EnemyStrike: {
+        sf::RectangleShape beam({150.0F, 6.0F});
+        beam.setOrigin(75.0F, 3.0F);
+        beam.setPosition(pos);
+        beam.setRotation(18.0F);
+        beam.setFillColor(color);
+        window.draw(beam);
+        break;
+    }
+    }
+
+    if (!effect.label.empty()) {
+        sf::Text label = ui::makeText(resources, effect.label, 20, color);
+        const sf::FloatRect bounds = label.getLocalBounds();
+        label.setOrigin(bounds.left + bounds.width / 2.0F, bounds.top + bounds.height / 2.0F);
+        label.setPosition(pos.x, pos.y - 52.0F * t);
+        window.draw(label);
+    }
+}
+
 void drawTopBar(sf::RenderWindow& window, GameApp& app)
 {
     const Player& player = app.runState().player();
@@ -84,7 +224,9 @@ void drawTopBar(sf::RenderWindow& window, GameApp& app)
                  {190.0F, 18.0F}, 18, sf::Color(244, 196, 201));
     ui::drawText(window, app.resources(), "金币 " + std::to_string(player.gold()), {345.0F, 18.0F}, 18, sf::Color(239, 202, 101));
     ui::drawText(window, app.resources(), "牌组 " + std::to_string(app.runState().deck().size()), {460.0F, 18.0F}, 18, sf::Color(196, 217, 255));
-    ui::drawText(window, app.resources(), "层数 " + std::to_string(app.runState().floor()), {580.0F, 18.0F}, 18, sf::Color(210, 210, 220));
+    ui::drawText(window, app.resources(), "Act " + std::to_string(app.runState().act()) + "/" + std::to_string(app.runState().maxActs()),
+                 {580.0F, 18.0F}, 18, sf::Color(210, 210, 220));
+    ui::drawText(window, app.resources(), "楼层 " + std::to_string(app.runState().floor()), {682.0F, 18.0F}, 18, sf::Color(210, 210, 220));
 
     std::string relicText = "遗物 ";
     if (player.relics().empty()) {
@@ -97,7 +239,7 @@ void drawTopBar(sf::RenderWindow& window, GameApp& app)
             relicText += player.relics().at(i);
         }
     }
-    ui::drawText(window, app.resources(), relicText, {710.0F, 18.0F}, 16, sf::Color(201, 190, 230));
+    ui::drawText(window, app.resources(), relicText, {795.0F, 18.0F}, 16, sf::Color(201, 190, 230));
 }
 
 class MainMenuScene final : public Scene {
@@ -193,7 +335,8 @@ public:
     void render(sf::RenderWindow& window) override
     {
         drawTopBar(window, app_);
-        ui::drawText(window, app_.resources(), "选择下一处节点", {536.0F, 82.0F}, 28, sf::Color::White);
+        ui::drawText(window, app_.resources(), app_.runState().actName(), {500.0F, 76.0F}, 26, ui::accentColor());
+        ui::drawText(window, app_.resources(), "选择下一处节点", {536.0F, 108.0F}, 22, sf::Color::White);
 
         const std::vector<MapNode>& nodes = app_.runState().map();
         for (const MapNode& node : nodes) {
@@ -264,8 +407,12 @@ public:
                 app_.runState().syncPlayerAfterCombat(combat_.player());
                 app_.runState().completeActiveNode();
                 if (boss) {
-                    app_.runState().setWon(true);
-                    app_.changeScene(makeVictoryScene(app_, true));
+                    if (app_.runState().finalAct()) {
+                        app_.runState().setWon(true);
+                        app_.changeScene(makeVictoryScene(app_, true));
+                    } else {
+                        app_.changeScene(makeActRewardScene(app_));
+                    }
                 } else {
                     app_.changeScene(makeRewardScene(app_));
                 }
@@ -276,6 +423,7 @@ public:
         }
 
         if (endTurnButton_.clicked(event, app_.window())) {
+            spawnEnemyEffect(combat_.enemy().previewMove());
             combat_.endPlayerTurn();
             return;
         }
@@ -285,13 +433,27 @@ public:
         for (std::size_t reverse = 0; reverse < count; ++reverse) {
             const std::size_t index = count - reverse - 1;
             if (handCardRect(index, count).contains(point)) {
-                lastMessage_ = combat_.playCard(index).message;
+                const Card card = combat_.deck().hand().at(index);
+                const PlayResult result = combat_.playCard(index);
+                lastMessage_ = result.message;
+                if (result.accepted) {
+                    spawnCardEffects(card);
+                }
                 return;
             }
         }
     }
 
-    void update(float) override {}
+    void update(float dt) override
+    {
+        for (VisualEffect& effect : effects_) {
+            effect.age += dt;
+        }
+        effects_.erase(std::remove_if(effects_.begin(), effects_.end(), [](const VisualEffect& effect) {
+                           return effect.age >= effect.duration;
+                       }),
+                       effects_.end());
+    }
 
     void render(sf::RenderWindow& window) override
     {
@@ -309,21 +471,12 @@ public:
         const EnemyMove intent = combat_.enemy().previewMove();
         ui::drawCreaturePanel(window, app_.resources(), combat_.enemy(), {890.0F, 160.0F, 310.0F, 134.0F}, "意图：" + intent.intentText);
 
-        sf::CircleShape enemyBody(72.0F);
-        enemyBody.setOrigin(72.0F, 72.0F);
-        enemyBody.setPosition(1045.0F, 350.0F);
-        enemyBody.setFillColor(sf::Color(96, 54, 63));
-        enemyBody.setOutlineColor(sf::Color(218, 153, 94));
-        enemyBody.setOutlineThickness(3.0F);
-        window.draw(enemyBody);
+        ui::drawEnemySprite(window, app_.resources(), combat_.enemy().kind(), enemyCenter(), isActiveBossNode() ? 1.0F : 0.85F);
+        ui::drawPlayerSprite(window, app_.resources(), playerCenter(), 0.92F);
 
-        sf::CircleShape playerBody(62.0F);
-        playerBody.setOrigin(62.0F, 62.0F);
-        playerBody.setPosition(230.0F, 215.0F);
-        playerBody.setFillColor(sf::Color(55, 87, 112));
-        playerBody.setOutlineColor(sf::Color(141, 203, 238));
-        playerBody.setOutlineThickness(3.0F);
-        window.draw(playerBody);
+        for (const VisualEffect& effect : effects_) {
+            drawVisualEffect(window, app_.resources(), effect);
+        }
 
         ui::drawPanel(window, {465.0F, 88.0F, 350.0F, 388.0F}, sf::Color(32, 35, 49), sf::Color(77, 84, 107), 1.0F);
         ui::drawText(window, app_.resources(), "战斗记录", {486.0F, 108.0F}, 22, ui::accentColor());
@@ -358,6 +511,48 @@ public:
     }
 
 private:
+    sf::Vector2f playerCenter() const
+    {
+        return {230.0F, 220.0F};
+    }
+
+    sf::Vector2f enemyCenter() const
+    {
+        return {1045.0F, 348.0F};
+    }
+
+    void spawnCardEffects(const Card& card)
+    {
+        for (const Effect& effect : card.effects) {
+            VisualEffect visual;
+            visual.kind = visualKindForEffect(effect.type);
+            visual.color = visualColorForEffect(effect.type);
+            visual.label = effect.amount > 0 ? std::to_string(effect.amount) : "";
+            visual.duration = effect.type == EffectType::Damage ? 0.45F : 0.62F;
+            if (effect.type == EffectType::Damage || effect.type == EffectType::Vulnerable || effect.type == EffectType::Weak) {
+                visual.start = playerCenter();
+                visual.end = enemyCenter();
+            } else {
+                visual.start = playerCenter();
+                visual.end = playerCenter();
+            }
+            effects_.push_back(visual);
+        }
+    }
+
+    void spawnEnemyEffect(const EnemyMove& move)
+    {
+        if (move.damage > 0) {
+            effects_.push_back(VisualEffect {VisualEffectKind::EnemyStrike, enemyCenter(), playerCenter(), 0.0F, 0.5F, sf::Color(255, 116, 92), std::to_string(move.damage)});
+        }
+        if (move.block > 0 || move.strength > 0) {
+            effects_.push_back(VisualEffect {VisualEffectKind::BossPulse, enemyCenter(), enemyCenter(), 0.0F, 0.7F, sf::Color(236, 190, 88), ""});
+        }
+        if (move.vulnerable > 0 || move.weak > 0) {
+            effects_.push_back(VisualEffect {VisualEffectKind::Debuff, playerCenter(), playerCenter(), 0.0F, 0.65F, sf::Color(172, 126, 232), ""});
+        }
+    }
+
     bool isActiveBossNode() const
     {
         const std::optional<int>& id = app_.runState().activeNodeId();
@@ -369,6 +564,7 @@ private:
     ui::Button endTurnButton_;
     ui::Button continueButton_;
     std::string lastMessage_;
+    std::vector<VisualEffect> effects_;
 };
 
 class RewardScene final : public Scene {
@@ -442,6 +638,70 @@ private:
     int gold_ {0};
     bool relicReward_ {false};
     bool rewardGranted_ {false};
+};
+
+class ActRewardScene final : public Scene {
+public:
+    explicit ActRewardScene(GameApp& app)
+        : Scene(app)
+        , rewardCards_(app.runState().makeRewards(3))
+        , vitalityButton_({418.0F, 484.0F, 220.0F, 52.0F}, "生命核心")
+        , treasureButton_({530.0F, 548.0F, 220.0F, 52.0F}, "战利品箱")
+        , relicButton_({642.0F, 484.0F, 220.0F, 52.0F}, "Boss 遗物")
+        , completedAct_(app.runState().act())
+    {
+    }
+
+    void handleEvent(const sf::Event& event) override
+    {
+        if (vitalityButton_.clicked(event, app_.window())) {
+            Player& player = app_.runState().player();
+            player.setMaxHp(player.maxHp() + 8);
+            player.heal(28);
+            app_.runState().startNextAct();
+            app_.changeScene(makeMapScene(app_));
+        } else if (treasureButton_.clicked(event, app_.window())) {
+            app_.runState().player().gainGold(120);
+            app_.runState().addCardToDeck(rewardCards_.at(0));
+            app_.runState().startNextAct();
+            app_.changeScene(makeMapScene(app_));
+        } else if (relicButton_.clicked(event, app_.window())) {
+            app_.runState().player().addRelic("第 " + std::to_string(completedAct_) + " 层 Boss 印记");
+            app_.runState().addCardToDeck(rewardCards_.at(1));
+            app_.runState().startNextAct();
+            app_.changeScene(makeMapScene(app_));
+        }
+    }
+
+    void update(float) override {}
+
+    void render(sf::RenderWindow& window) override
+    {
+        drawTopBar(window, app_);
+        ui::drawText(window, app_.resources(), "第 " + std::to_string(completedAct_) + " 层 Boss 已击败", {440.0F, 96.0F}, 32, ui::accentColor());
+        ui::drawText(window, app_.resources(), "选择一份 Boss 奖励，然后进入下一层。", {454.0F, 146.0F}, 20, sf::Color(224, 219, 203));
+
+        const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+        for (std::size_t i = 0; i < rewardCards_.size(); ++i) {
+            const sf::FloatRect rect = rewardCardRect(i);
+            ui::drawCard(window, app_.resources(), rewardCards_.at(i), rect, true, rect.contains(mouse));
+        }
+
+        ui::drawPanel(window, {390.0F, 452.0F, 500.0F, 170.0F}, sf::Color(31, 35, 48), sf::Color(90, 101, 128), 1.0F);
+        ui::drawText(window, app_.resources(), "生命核心：最大生命 +8，回复 28", {430.0F, 462.0F}, 16, sf::Color(224, 220, 208));
+        ui::drawText(window, app_.resources(), "战利品箱：金币 +120，获得左侧卡牌", {430.0F, 526.0F}, 16, sf::Color(224, 220, 208));
+        ui::drawText(window, app_.resources(), "Boss 遗物：获得印记，获得中间卡牌", {430.0F, 590.0F}, 16, sf::Color(224, 220, 208));
+        vitalityButton_.draw(window, app_.resources());
+        treasureButton_.draw(window, app_.resources());
+        relicButton_.draw(window, app_.resources());
+    }
+
+private:
+    std::vector<Card> rewardCards_;
+    ui::Button vitalityButton_;
+    ui::Button treasureButton_;
+    ui::Button relicButton_;
+    int completedAct_ {1};
 };
 
 class ShopScene final : public Scene {
@@ -659,6 +919,11 @@ std::unique_ptr<Scene> makeCombatScene(GameApp& app)
 std::unique_ptr<Scene> makeRewardScene(GameApp& app)
 {
     return std::make_unique<RewardScene>(app);
+}
+
+std::unique_ptr<Scene> makeActRewardScene(GameApp& app)
+{
+    return std::make_unique<ActRewardScene>(app);
 }
 
 std::unique_ptr<Scene> makeShopScene(GameApp& app)

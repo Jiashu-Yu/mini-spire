@@ -39,7 +39,14 @@ enum class EnemyKind {
     AshCultist,
     AcidSlime,
     BellGuard,
+    ThornLurker,
+    CrystalWisp,
+    EmberDuelist,
+    NullPriest,
+    ChronoKnight,
     IronSentinel,
+    RootMatriarch,
+    ClockworkDragon,
     SpireArchitect
 };
 
@@ -259,6 +266,10 @@ public:
     const std::vector<MapNode>& map() const;
     const std::optional<int>& activeNodeId() const;
     int floor() const;
+    int act() const;
+    int maxActs() const;
+    bool finalAct() const;
+    std::string actName() const;
 
     std::vector<int> availableNodeIds() const;
     bool isNodeAvailable(int id) const;
@@ -273,6 +284,7 @@ public:
     Card makeRandomReward();
     void addCardToDeck(const Card& card);
     void syncPlayerAfterCombat(const Player& player);
+    void startNextAct();
     void rest();
     void eventGainGold();
     void eventHeal();
@@ -286,6 +298,8 @@ private:
     std::vector<MapNode> map_;
     std::optional<int> activeNodeId_;
     int floor_ {0};
+    int act_ {1};
+    int maxActs_ {3};
     bool active_ {false};
     bool won_ {false};
     std::mt19937 rng_;
