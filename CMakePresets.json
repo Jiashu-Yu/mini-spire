@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "core-msvc",
+      "displayName": "Core tests only (MSVC)",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/core-msvc",
+      "cacheVariables": {
+        "MINISPIRE_BUILD_APP": "OFF",
+        "MINISPIRE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "app-vcpkg-msvc",
+      "displayName": "SFML app with vcpkg (MSVC)",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/app-vcpkg-msvc",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "MINISPIRE_BUILD_APP": "ON",
+        "MINISPIRE_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "core-msvc",
+      "configurePreset": "core-msvc"
+    },
+    {
+      "name": "app-vcpkg-msvc",
+      "configurePreset": "app-vcpkg-msvc"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "core-msvc",
+      "configurePreset": "core-msvc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "app-vcpkg-msvc",
+      "configurePreset": "app-vcpkg-msvc",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

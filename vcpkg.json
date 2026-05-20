@@ -1,0 +1,8 @@
+{
+  "name": "mini-spire",
+  "version-string": "0.1.0",
+  "description": "A compact C++/SFML roguelike deckbuilder inspired by Slay the Spire style systems.",
+  "dependencies": [
+    "sfml"
+  ]
+}
