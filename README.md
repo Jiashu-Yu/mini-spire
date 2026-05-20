@@ -6,6 +6,12 @@ Mini Spire 是一个 C++ / SFML 实现的原创卡牌爬塔竖切版。项目参
 
 推荐用 Visual Studio 2022 打开本文件夹作为 CMake 项目，或在 “Developer PowerShell for VS 2022” 中执行下面命令。
 
+如果 SFML 下载的是 64-bit 版本，请确认开发环境也是 x64。PowerShell 里可以这样切换：
+
+```powershell
+& "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64
+```
+
 只验证核心规则层：
 
 ```powershell

@@ -156,7 +156,9 @@ void drawCard(sf::RenderWindow& window,
     if (!playable) {
         fill = sf::Color(base.r / 2, base.g / 2, base.b / 2, 230);
     } else if (hovered) {
-        fill = sf::Color(std::min(255, base.r + 28), std::min(255, base.g + 28), std::min(255, base.b + 28));
+        fill = sf::Color(static_cast<sf::Uint8>(std::min(255, base.r + 28)),
+                         static_cast<sf::Uint8>(std::min(255, base.g + 28)),
+                         static_cast<sf::Uint8>(std::min(255, base.b + 28)));
     }
     drawPanel(window, rect, fill, hovered ? accentColor() : sf::Color(164, 154, 132), hovered ? 3.0F : 1.5F);
 

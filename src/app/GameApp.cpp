@@ -55,6 +55,8 @@ GameApp::GameApp()
     window_.setFramerateLimit(60);
 }
 
+GameApp::~GameApp() = default;
+
 int GameApp::run()
 {
     resources_.load();

@@ -28,6 +28,7 @@ private:
 class GameApp {
 public:
     GameApp();
+    ~GameApp();
 
     int run();
     void changeScene(std::unique_ptr<Scene> scene);
