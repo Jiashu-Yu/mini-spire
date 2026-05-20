@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string>
@@ -34,6 +35,11 @@ sf::FloatRect handCardRect(std::size_t index, std::size_t count)
 sf::FloatRect rewardCardRect(std::size_t index)
 {
     return {310.0F + static_cast<float>(index) * 220.0F, 240.0F, 160.0F, 220.0F};
+}
+
+sf::FloatRect combatPotionSlotRect(std::size_t index)
+{
+    return {70.0F + static_cast<float>(index) * 152.0F, 462.0F, 138.0F, 34.0F};
 }
 
 std::uint32_t randomSeed()
@@ -313,22 +319,46 @@ void drawTopBar(sf::RenderWindow& window, GameApp& app)
                  {190.0F, 18.0F}, 18, sf::Color(244, 196, 201));
     ui::drawText(window, app.resources(), "金币 " + std::to_string(player.gold()), {345.0F, 18.0F}, 18, sf::Color(239, 202, 101));
     ui::drawText(window, app.resources(), "牌组 " + std::to_string(app.runState().deck().size()), {460.0F, 18.0F}, 18, sf::Color(196, 217, 255));
-    ui::drawText(window, app.resources(), "Act " + std::to_string(app.runState().act()) + "/" + std::to_string(app.runState().maxActs()),
+    ui::drawText(window, app.resources(), "楼层 " + std::to_string(app.runState().level()) + "/" + std::to_string(app.runState().maxLevels()),
                  {580.0F, 18.0F}, 18, sf::Color(210, 210, 220));
-    ui::drawText(window, app.resources(), "楼层 " + std::to_string(app.runState().floor()), {682.0F, 18.0F}, 18, sf::Color(210, 210, 220));
+    ui::drawText(window, app.resources(), "步数 " + std::to_string(app.runState().steps()), {682.0F, 18.0F}, 18, sf::Color(210, 210, 220));
 
-    std::string relicText = "遗物 ";
+    std::string potionText = "药水 ";
+    for (std::size_t i = 0; i < player.potions().size(); ++i) {
+        if (i > 0) {
+            potionText += " / ";
+        }
+        potionText += player.potions().at(i) ? player.potions().at(i)->name : "空";
+    }
+    ui::drawText(window, app.resources(), potionText, {790.0F, 18.0F}, 15, sf::Color(168, 216, 242));
+
+    std::string relicText = "圣遗物 ";
     if (player.relics().empty()) {
         relicText += "无";
     } else {
-        for (std::size_t i = 0; i < player.relics().size(); ++i) {
-            if (i > 0) {
-                relicText += " / ";
-            }
-            relicText += player.relics().at(i);
+        relicText += player.relics().front();
+        if (player.relics().size() > 1) {
+            relicText += " +" + std::to_string(player.relics().size() - 1);
         }
     }
-    ui::drawText(window, app.resources(), relicText, {795.0F, 18.0F}, 16, sf::Color(201, 190, 230));
+    ui::drawText(window, app.resources(), relicText, {1042.0F, 18.0F}, 15, sf::Color(201, 190, 230));
+}
+
+void drawCombatPotions(sf::RenderWindow& window, const ResourceManager& resources, const Player& player, sf::Vector2f mouse)
+{
+    ui::drawText(window, resources, "药水槽（左键使用 / 右键丢弃）", {68.0F, 420.0F}, 14, sf::Color(183, 211, 231));
+    for (std::size_t i = 0; i < player.potions().size(); ++i) {
+        const sf::FloatRect rect = combatPotionSlotRect(i);
+        const bool hovered = rect.contains(mouse);
+        const bool filled = player.potions().at(i).has_value();
+        ui::drawPanel(window,
+                      rect,
+                      filled ? sf::Color(42, 62, 76) : sf::Color(36, 39, 48),
+                      hovered ? ui::accentColor() : sf::Color(78, 95, 112),
+                      hovered ? 2.0F : 1.0F);
+        const std::string label = filled ? player.potions().at(i)->name : "空槽";
+        ui::drawText(window, resources, label, {rect.left + 12.0F, rect.top + 8.0F}, 14, filled ? sf::Color(220, 238, 248) : sf::Color(135, 142, 155));
+    }
 }
 
 class MainMenuScene final : public Scene {
@@ -420,7 +450,7 @@ public:
     void render(sf::RenderWindow& window) override
     {
         drawTopBar(window, app_);
-        ui::drawText(window, app_.resources(), app_.runState().actName(), {500.0F, 76.0F}, 26, ui::accentColor());
+        ui::drawText(window, app_.resources(), app_.runState().levelName(), {500.0F, 76.0F}, 26, ui::accentColor());
         ui::drawText(window, app_.resources(), "选择下一处节点", {536.0F, 108.0F}, 22, sf::Color::White);
 
         const std::vector<MapNode>& nodes = app_.runState().map();
@@ -479,12 +509,17 @@ public:
 
     void handleEvent(const sf::Event& event) override
     {
-        if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left) {
+        if (event.type != sf::Event::MouseButtonPressed) {
+            return;
+        }
+        const bool leftClick = event.mouseButton.button == sf::Mouse::Left;
+        const bool rightClick = event.mouseButton.button == sf::Mouse::Right;
+        if (!leftClick && !rightClick) {
             return;
         }
 
         if (combat_.finished()) {
-            if (!continueButton_.clicked(event, app_.window())) {
+            if (!leftClick || !continueButton_.clicked(event, app_.window())) {
                 return;
             }
             if (combat_.victory()) {
@@ -492,11 +527,11 @@ public:
                 app_.runState().syncPlayerAfterCombat(combat_.player());
                 app_.runState().completeActiveNode();
                 if (boss) {
-                    if (app_.runState().finalAct()) {
+                    if (app_.runState().finalLevel()) {
                         app_.runState().setWon(true);
                         app_.changeScene(makeVictoryScene(app_, true));
                     } else {
-                        app_.changeScene(makeActRewardScene(app_));
+                        app_.changeScene(makeLevelRewardScene(app_));
                     }
                 } else {
                     app_.changeScene(makeRewardScene(app_));
@@ -507,13 +542,30 @@ public:
             return;
         }
 
+        const sf::Vector2f point = mousePoint(event, app_.window());
+        for (std::size_t i = 0; i < combat_.player().potions().size(); ++i) {
+            if (!combatPotionSlotRect(i).contains(point)) {
+                continue;
+            }
+            const std::optional<Potion> potion = combat_.player().potions().at(i);
+            PlayResult result = leftClick ? combat_.usePotion(i) : combat_.discardPotion(i);
+            lastMessage_ = result.message;
+            if (result.accepted && leftClick && potion) {
+                spawnPotionEffects(*potion);
+            }
+            return;
+        }
+
+        if (!leftClick) {
+            return;
+        }
+
         if (endTurnButton_.clicked(event, app_.window())) {
             spawnEnemyEffect(combat_.enemy().previewMove());
             combat_.endPlayerTurn();
             return;
         }
 
-        const sf::Vector2f point = mousePoint(event, app_.window());
         const std::size_t count = combat_.deck().hand().size();
         for (std::size_t reverse = 0; reverse < count; ++reverse) {
             const std::size_t index = count - reverse - 1;
@@ -551,6 +603,8 @@ public:
                                            "  弃牌 " + std::to_string(combat_.deck().discardCount()) +
                                            "  消耗 " + std::to_string(combat_.deck().exhaustCount()),
                      {68.0F, 438.0F}, 16, sf::Color(205, 210, 225));
+        const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+        drawCombatPotions(window, app_.resources(), combat_.player(), mouse);
 
         ui::drawPanel(window, {843.0F, 76.0F, 410.0F, 400.0F}, sf::Color(29, 32, 44), sf::Color(76, 83, 105), 1.0F);
         const EnemyMove intent = combat_.enemy().previewMove();
@@ -578,7 +632,6 @@ public:
         endTurnButton_.draw(window, app_.resources());
 
         const std::vector<Card>& hand = combat_.deck().hand();
-        const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         for (std::size_t i = 0; i < hand.size(); ++i) {
             sf::FloatRect rect = handCardRect(i, hand.size());
             const bool hovered = rect.contains(mouse);
@@ -625,6 +678,25 @@ private:
         }
     }
 
+    void spawnPotionEffects(const Potion& potion)
+    {
+        for (const Effect& effect : potion.effects) {
+            VisualEffect visual;
+            visual.kind = visualKindForEffect(effect.type);
+            visual.color = visualColorForEffect(effect.type);
+            visual.label = effect.amount > 0 ? std::to_string(effect.amount) : "";
+            visual.duration = 0.62F;
+            if (effect.type == EffectType::Damage || effect.type == EffectType::Vulnerable || effect.type == EffectType::Weak) {
+                visual.start = playerCenter();
+                visual.end = enemyCenter();
+            } else {
+                visual.start = playerCenter();
+                visual.end = playerCenter();
+            }
+            effects_.push_back(visual);
+        }
+    }
+
     void spawnEnemyEffect(const EnemyMove& move)
     {
         if (move.damage > 0) {
@@ -659,8 +731,8 @@ public:
         , rewards_(app.runState().makeRewards(3))
         , skipButton_({544.0F, 535.0F, 192.0F, 48.0F}, "跳过拿金币")
     {
-        gold_ = 26 + app_.runState().floor() * 4;
-        relicReward_ = app_.runState().floor() % 2 == 0;
+        gold_ = 26 + app_.runState().steps() * 4;
+        relicReward_ = app_.runState().steps() % 2 == 0;
     }
 
     void handleEvent(const sf::Event& event) override
@@ -725,15 +797,15 @@ private:
     bool rewardGranted_ {false};
 };
 
-class ActRewardScene final : public Scene {
+class LevelRewardScene final : public Scene {
 public:
-    explicit ActRewardScene(GameApp& app)
+    explicit LevelRewardScene(GameApp& app)
         : Scene(app)
         , rewardCards_(app.runState().makeRewards(3))
         , vitalityButton_({418.0F, 484.0F, 220.0F, 52.0F}, "生命核心")
         , treasureButton_({530.0F, 548.0F, 220.0F, 52.0F}, "战利品箱")
-        , relicButton_({642.0F, 484.0F, 220.0F, 52.0F}, "Boss 遗物")
-        , completedAct_(app.runState().act())
+        , relicButton_({642.0F, 484.0F, 220.0F, 52.0F}, "Boss 圣遗物")
+        , completedLevel_(app.runState().level())
     {
     }
 
@@ -743,17 +815,17 @@ public:
             Player& player = app_.runState().player();
             player.setMaxHp(player.maxHp() + 8);
             player.heal(28);
-            app_.runState().startNextAct();
+            app_.runState().startNextLevel();
             app_.changeScene(makeMapScene(app_));
         } else if (treasureButton_.clicked(event, app_.window())) {
             app_.runState().player().gainGold(120);
             app_.runState().addCardToDeck(rewardCards_.at(0));
-            app_.runState().startNextAct();
+            app_.runState().startNextLevel();
             app_.changeScene(makeMapScene(app_));
         } else if (relicButton_.clicked(event, app_.window())) {
-            app_.runState().player().addRelic("第 " + std::to_string(completedAct_) + " 层 Boss 印记");
+            app_.runState().player().addRelic("第 " + std::to_string(completedLevel_) + " 层 Boss 印记");
             app_.runState().addCardToDeck(rewardCards_.at(1));
-            app_.runState().startNextAct();
+            app_.runState().startNextLevel();
             app_.changeScene(makeMapScene(app_));
         }
     }
@@ -763,7 +835,7 @@ public:
     void render(sf::RenderWindow& window) override
     {
         drawTopBar(window, app_);
-        ui::drawText(window, app_.resources(), "第 " + std::to_string(completedAct_) + " 层 Boss 已击败", {440.0F, 96.0F}, 32, ui::accentColor());
+        ui::drawText(window, app_.resources(), "第 " + std::to_string(completedLevel_) + " 层 Boss 已击败", {440.0F, 96.0F}, 32, ui::accentColor());
         ui::drawText(window, app_.resources(), "选择一份 Boss 奖励，然后进入下一层。", {454.0F, 146.0F}, 20, sf::Color(224, 219, 203));
 
         const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
@@ -775,7 +847,7 @@ public:
         ui::drawPanel(window, {390.0F, 452.0F, 500.0F, 170.0F}, sf::Color(31, 35, 48), sf::Color(90, 101, 128), 1.0F);
         ui::drawText(window, app_.resources(), "生命核心：最大生命 +8，回复 28", {430.0F, 462.0F}, 16, sf::Color(224, 220, 208));
         ui::drawText(window, app_.resources(), "战利品箱：金币 +120，获得左侧卡牌", {430.0F, 526.0F}, 16, sf::Color(224, 220, 208));
-        ui::drawText(window, app_.resources(), "Boss 遗物：获得印记，获得中间卡牌", {430.0F, 590.0F}, 16, sf::Color(224, 220, 208));
+        ui::drawText(window, app_.resources(), "Boss 圣遗物：获得印记，获得中间卡牌", {430.0F, 590.0F}, 16, sf::Color(224, 220, 208));
         vitalityButton_.draw(window, app_.resources());
         treasureButton_.draw(window, app_.resources());
         relicButton_.draw(window, app_.resources());
@@ -786,39 +858,82 @@ private:
     ui::Button vitalityButton_;
     ui::Button treasureButton_;
     ui::Button relicButton_;
-    int completedAct_ {1};
+    int completedLevel_ {1};
 };
 
 class ShopScene final : public Scene {
 public:
     explicit ShopScene(GameApp& app)
         : Scene(app)
-        , cards_(app.runState().makeShopCards(4))
-        , sold_(cards_.size(), false)
+        , cards_(app.runState().makeShopCards(3))
+        , cardSold_(cards_.size(), false)
+        , relics_(app.runState().makeShopRelics(2))
+        , relicSold_(relics_.size(), false)
+        , potions_(app.runState().makeShopPotions(3))
+        , potionSold_(potions_.size(), false)
         , leaveButton_({552.0F, 610.0F, 176.0F, 48.0F}, "离开商店")
     {
     }
 
     void handleEvent(const sf::Event& event) override
     {
+        if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left) {
+            return;
+        }
         if (leaveButton_.clicked(event, app_.window())) {
             app_.runState().completeActiveNode();
             app_.changeScene(makeMapScene(app_));
             return;
         }
-        if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left) {
-            return;
-        }
+
         const sf::Vector2f point = mousePoint(event, app_.window());
         for (std::size_t i = 0; i < cards_.size(); ++i) {
-            if (sold_.at(i) || !shopCardRect(i).contains(point)) {
+            if (cardSold_.at(i) || !shopCardRect(i).contains(point)) {
                 continue;
             }
-            const int price = priceFor(i);
+            const int price = cardPriceFor(i);
             if (app_.runState().player().spendGold(price)) {
                 app_.runState().addCardToDeck(cards_.at(i));
-                sold_.at(i) = true;
+                cardSold_.at(i) = true;
+                message_ = "购买卡牌：" + cards_.at(i).name;
+            } else {
+                message_ = "金币不足";
             }
+            return;
+        }
+
+        for (std::size_t i = 0; i < relics_.size(); ++i) {
+            if (relicSold_.at(i) || !shopRelicRect(i).contains(point)) {
+                continue;
+            }
+            const int price = relicPriceFor(i);
+            if (app_.runState().player().spendGold(price)) {
+                app_.runState().player().addRelic(relics_.at(i));
+                relicSold_.at(i) = true;
+                message_ = "购买圣遗物：" + relics_.at(i);
+            } else {
+                message_ = "金币不足";
+            }
+            return;
+        }
+
+        for (std::size_t i = 0; i < potions_.size(); ++i) {
+            if (potionSold_.at(i) || !shopPotionRect(i).contains(point)) {
+                continue;
+            }
+            const int price = potionPriceFor(i);
+            if (!hasFreePotionSlot()) {
+                message_ = "药水槽已满，先在战斗中使用或丢弃药水";
+                return;
+            }
+            if (app_.runState().player().spendGold(price)) {
+                app_.runState().player().addPotion(potions_.at(i));
+                potionSold_.at(i) = true;
+                message_ = "购买药水：" + potions_.at(i).name;
+            } else {
+                message_ = "金币不足";
+            }
+            return;
         }
     }
 
@@ -827,33 +942,128 @@ public:
     void render(sf::RenderWindow& window) override
     {
         drawTopBar(window, app_);
-        ui::drawText(window, app_.resources(), "商店", {604.0F, 92.0F}, 34, ui::accentColor());
-        ui::drawText(window, app_.resources(), "点击卡牌购买，金币不足时不会扣费。", {470.0F, 138.0F}, 18, sf::Color(214, 210, 196));
+        ui::drawText(window, app_.resources(), "商店", {604.0F, 82.0F}, 34, ui::accentColor());
+        ui::drawText(window, app_.resources(), "购买卡牌、圣遗物和药水。药水槽最多 2 个。", {414.0F, 124.0F}, 18, sf::Color(214, 210, 196));
+        if (!message_.empty()) {
+            ui::drawText(window, app_.resources(), message_, {500.0F, 154.0F}, 16, sf::Color(244, 199, 120));
+        }
+
         const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+        ui::drawText(window, app_.resources(), "卡牌", {284.0F, 184.0F}, 22, sf::Color(225, 220, 204));
         for (std::size_t i = 0; i < cards_.size(); ++i) {
             const sf::FloatRect rect = shopCardRect(i);
-            ui::drawCard(window, app_.resources(), cards_.at(i), rect, !sold_.at(i) && app_.runState().player().gold() >= priceFor(i), rect.contains(mouse));
-            ui::drawText(window, app_.resources(), sold_.at(i) ? "已售出" : std::to_string(priceFor(i)) + " 金币",
-                         {rect.left + 34.0F, rect.top + rect.height + 14.0F}, 18, sold_.at(i) ? sf::Color(150, 150, 150) : sf::Color(239, 202, 101));
+            ui::drawCard(window, app_.resources(), cards_.at(i), rect, !cardSold_.at(i) && app_.runState().player().gold() >= cardPriceFor(i), rect.contains(mouse));
+            ui::drawText(window, app_.resources(), cardSold_.at(i) ? "已售出" : std::to_string(cardPriceFor(i)) + " 金币",
+                         {rect.left + 34.0F, rect.top + rect.height + 14.0F}, 18, cardSold_.at(i) ? sf::Color(150, 150, 150) : sf::Color(239, 202, 101));
         }
+
+        ui::drawText(window, app_.resources(), "圣遗物", {812.0F, 184.0F}, 22, sf::Color(225, 220, 204));
+        for (std::size_t i = 0; i < relics_.size(); ++i) {
+            drawRelicOffer(window, mouse, i);
+        }
+
+        ui::drawText(window, app_.resources(), "药水", {842.0F, 386.0F}, 22, sf::Color(225, 220, 204));
+        for (std::size_t i = 0; i < potions_.size(); ++i) {
+            drawPotionOffer(window, mouse, i);
+        }
+
         leaveButton_.draw(window, app_.resources());
     }
 
 private:
     sf::FloatRect shopCardRect(std::size_t index) const
     {
-        return {195.0F + static_cast<float>(index) * 225.0F, 220.0F, 160.0F, 220.0F};
+        return {98.0F + static_cast<float>(index) * 190.0F, 220.0F, 150.0F, 210.0F};
     }
 
-    int priceFor(std::size_t index) const
+    sf::FloatRect shopRelicRect(std::size_t index) const
     {
-        static const std::array<int, 4> prices {45, 55, 68, 82};
+        return {720.0F, 222.0F + static_cast<float>(index) * 78.0F, 360.0F, 58.0F};
+    }
+
+    sf::FloatRect shopPotionRect(std::size_t index) const
+    {
+        return {720.0F, 424.0F + static_cast<float>(index) * 54.0F, 360.0F, 42.0F};
+    }
+
+    int cardPriceFor(std::size_t index) const
+    {
+        static const std::array<int, 3> prices {50, 65, 80};
         return prices.at(index % prices.size());
     }
 
+    int relicPriceFor(std::size_t index) const
+    {
+        static const std::array<int, 2> prices {145, 180};
+        return prices.at(index % prices.size());
+    }
+
+    int potionPriceFor(std::size_t index) const
+    {
+        static const std::array<int, 3> prices {38, 46, 54};
+        return prices.at(index % prices.size());
+    }
+
+    bool hasFreePotionSlot() const
+    {
+        const auto& potions = app_.runState().player().potions();
+        return std::any_of(potions.begin(), potions.end(), [](const std::optional<Potion>& potion) {
+            return !potion.has_value();
+        });
+    }
+
+    std::string relicDescription(const std::string& relic) const
+    {
+        if (relic == "晨星羽饰") {
+            return "战斗开局力量 +1。";
+        }
+        if (relic == "裂纹罗盘") {
+            return "战斗开局额外抽 1 张牌。";
+        }
+        if (relic == "余烬护符") {
+            return "战斗开局获得 6 格挡。";
+        }
+        if (relic == "晶化沙漏") {
+            return "战斗开局获得 1 能量。";
+        }
+        if (relic == "旧塔徽章") {
+            return "战斗开局回复 2 生命。";
+        }
+        return "敌人开局获得 1 虚弱。";
+    }
+
+    void drawRelicOffer(sf::RenderWindow& window, sf::Vector2f mouse, std::size_t index) const
+    {
+        const sf::FloatRect rect = shopRelicRect(index);
+        const bool sold = relicSold_.at(index);
+        const bool hovered = rect.contains(mouse);
+        ui::drawPanel(window, rect, sold ? sf::Color(42, 42, 48) : sf::Color(48, 45, 65), hovered ? ui::accentColor() : sf::Color(95, 90, 124), hovered ? 2.0F : 1.0F);
+        ui::drawText(window, app_.resources(), relics_.at(index), {rect.left + 18.0F, rect.top + 8.0F}, 18, sold ? sf::Color(145, 145, 150) : sf::Color(226, 214, 245));
+        ui::drawText(window, app_.resources(), relicDescription(relics_.at(index)), {rect.left + 18.0F, rect.top + 32.0F}, 13, sf::Color(190, 190, 204));
+        ui::drawText(window, app_.resources(), sold ? "已售出" : std::to_string(relicPriceFor(index)) + " 金币",
+                     {rect.left + 262.0F, rect.top + 18.0F}, 15, sold ? sf::Color(150, 150, 150) : sf::Color(239, 202, 101));
+    }
+
+    void drawPotionOffer(sf::RenderWindow& window, sf::Vector2f mouse, std::size_t index) const
+    {
+        const sf::FloatRect rect = shopPotionRect(index);
+        const bool sold = potionSold_.at(index);
+        const bool hovered = rect.contains(mouse);
+        ui::drawPanel(window, rect, sold ? sf::Color(42, 42, 48) : sf::Color(39, 58, 70), hovered ? ui::accentColor() : sf::Color(83, 107, 125), hovered ? 2.0F : 1.0F);
+        ui::drawText(window, app_.resources(), potions_.at(index).name, {rect.left + 18.0F, rect.top + 8.0F}, 16, sold ? sf::Color(145, 145, 150) : sf::Color(208, 232, 245));
+        ui::drawText(window, app_.resources(), potions_.at(index).description, {rect.left + 132.0F, rect.top + 9.0F}, 14, sf::Color(190, 205, 214));
+        ui::drawText(window, app_.resources(), sold ? "已售出" : std::to_string(potionPriceFor(index)) + " 金币",
+                     {rect.left + 270.0F, rect.top + 9.0F}, 14, sold ? sf::Color(150, 150, 150) : sf::Color(239, 202, 101));
+    }
+
     std::vector<Card> cards_;
-    std::vector<bool> sold_;
+    std::vector<bool> cardSold_;
+    std::vector<std::string> relics_;
+    std::vector<bool> relicSold_;
+    std::vector<Potion> potions_;
+    std::vector<bool> potionSold_;
     ui::Button leaveButton_;
+    std::string message_;
 };
 
 class RestScene final : public Scene {
@@ -1006,9 +1216,9 @@ std::unique_ptr<Scene> makeRewardScene(GameApp& app)
     return std::make_unique<RewardScene>(app);
 }
 
-std::unique_ptr<Scene> makeActRewardScene(GameApp& app)
+std::unique_ptr<Scene> makeLevelRewardScene(GameApp& app)
 {
-    return std::make_unique<ActRewardScene>(app);
+    return std::make_unique<LevelRewardScene>(app);
 }
 
 std::unique_ptr<Scene> makeShopScene(GameApp& app)

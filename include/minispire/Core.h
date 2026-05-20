@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <map>
 #include <optional>
 #include <random>
@@ -75,6 +76,13 @@ struct Card {
     bool exhaust {false};
 };
 
+struct Potion {
+    std::string id;
+    std::string name;
+    std::string description;
+    std::vector<Effect> effects;
+};
+
 struct CombatEvent {
     std::string text;
 };
@@ -120,6 +128,7 @@ public:
     int maxEnergy() const;
     int gold() const;
     const std::vector<std::string>& relics() const;
+    const std::array<std::optional<Potion>, 2>& potions() const;
 
     void beginTurn();
     bool spendEnergy(int amount);
@@ -127,6 +136,9 @@ public:
     void gainGold(int amount);
     bool spendGold(int amount);
     void addRelic(std::string relic);
+    bool addPotion(Potion potion);
+    std::optional<Potion> takePotion(std::size_t slot);
+    bool discardPotion(std::size_t slot);
     void setGold(int gold);
 
 private:
@@ -134,6 +146,7 @@ private:
     int energy_ {3};
     int gold_ {99};
     std::vector<std::string> relics_;
+    std::array<std::optional<Potion>, 2> potions_ {};
 };
 
 struct EnemyMove {
@@ -203,6 +216,8 @@ public:
 
     void start();
     PlayResult playCard(std::size_t handIndex);
+    PlayResult usePotion(std::size_t slot);
+    PlayResult discardPotion(std::size_t slot);
     void endPlayerTurn();
 
     const Player& player() const;
@@ -221,8 +236,10 @@ public:
 
 private:
     void beginPlayerTurn();
+    void applyRelicsAtCombatStart();
     void runEnemyTurn();
     void applyCardEffect(const Card& card, const Effect& effect);
+    void applyPotionEffect(const Potion& potion, const Effect& effect);
     void applyEnemyMove(const EnemyMove& move);
     int scaledOutgoingDamage(const Creature& attacker, int base) const;
     int scaledIncomingDamage(const Creature& defender, int base) const;
@@ -265,11 +282,11 @@ public:
     const std::vector<Card>& deck() const;
     const std::vector<MapNode>& map() const;
     const std::optional<int>& activeNodeId() const;
-    int floor() const;
-    int act() const;
-    int maxActs() const;
-    bool finalAct() const;
-    std::string actName() const;
+    int steps() const;
+    int level() const;
+    int maxLevels() const;
+    bool finalLevel() const;
+    std::string levelName() const;
 
     std::vector<int> availableNodeIds() const;
     bool isNodeAvailable(int id) const;
@@ -281,10 +298,13 @@ public:
     Enemy makeEnemyForActiveNode();
     std::vector<Card> makeRewards(int count);
     std::vector<Card> makeShopCards(int count);
+    std::vector<std::string> makeShopRelics(int count);
+    std::vector<Potion> makeShopPotions(int count);
     Card makeRandomReward();
+    Potion makeRandomPotion();
     void addCardToDeck(const Card& card);
     void syncPlayerAfterCombat(const Player& player);
-    void startNextAct();
+    void startNextLevel();
     void rest();
     void eventGainGold();
     void eventHeal();
@@ -297,9 +317,9 @@ private:
     std::vector<Card> deck_;
     std::vector<MapNode> map_;
     std::optional<int> activeNodeId_;
-    int floor_ {0};
-    int act_ {1};
-    int maxActs_ {3};
+    int steps_ {0};
+    int level_ {1};
+    int maxLevels_ {3};
     bool active_ {false};
     bool won_ {false};
     std::mt19937 rng_;
@@ -311,6 +331,7 @@ std::string toString(StatusType type);
 
 std::vector<Card> starterDeck();
 std::vector<Card> cardPool();
-Enemy makeEnemy(EnemyKind kind, int floor);
+std::vector<Potion> potionPool();
+Enemy makeEnemy(EnemyKind kind, int progress);
 
 } // namespace minispire

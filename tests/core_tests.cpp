@@ -73,30 +73,60 @@ void testRunMapUnlocksNextNodes()
 {
     RunController run;
     run.startNewRun(42);
-    assert(run.act() == 1);
+    assert(run.level() == 1);
     assert(run.availableNodeIds().size() == 2);
     const int first = run.availableNodeIds().front();
     assert(run.selectNode(first));
     run.completeActiveNode();
     assert(!run.availableNodeIds().empty());
-    assert(run.floor() == 1);
+    assert(run.steps() == 1);
 }
 
-void testRunAdvancesAcrossThreeActs()
+void testRunAdvancesAcrossThreeLevels()
 {
     RunController run;
     run.startNewRun(42);
-    assert(run.actName() == "第一层：灰烬地牢");
+    assert(run.levelName() == "第一层：灰烬地牢");
 
-    run.startNextAct();
-    assert(run.act() == 2);
-    assert(!run.finalAct());
+    run.startNextLevel();
+    assert(run.level() == 2);
+    assert(!run.finalLevel());
     assert(run.availableNodeIds().size() == 3);
 
-    run.startNextAct();
-    assert(run.act() == 3);
-    assert(run.finalAct());
+    run.startNextLevel();
+    assert(run.level() == 3);
+    assert(run.finalLevel());
     assert(run.availableNodeIds().size() == 3);
+}
+
+void testPotionSlotsUseAndDiscard()
+{
+    Player player;
+    assert(player.addPotion(Potion {"fire", "火焰药水", "造成伤害", {{EffectType::Damage, 20}}}));
+    assert(player.addPotion(Potion {"guard", "钢肤药水", "获得格挡", {{EffectType::Block, 14}}}));
+    assert(!player.addPotion(Potion {"extra", "额外药水", "槽位已满", {{EffectType::Heal, 1}}}));
+
+    Enemy enemy = makeEnemy(EnemyKind::AshCultist, 0);
+    CombatState combat(player, enemy, starterDeck(), 11);
+    combat.start();
+    const int beforeHp = combat.enemy().hp();
+    assert(combat.usePotion(0).accepted);
+    assert(combat.enemy().hp() < beforeHp);
+    assert(!combat.player().potions().at(0).has_value());
+
+    assert(combat.discardPotion(1).accepted);
+    assert(!combat.player().potions().at(1).has_value());
+}
+
+void testRelicAppliesAtCombatStart()
+{
+    Player player;
+    player.addRelic("晨星羽饰");
+    Enemy enemy = makeEnemy(EnemyKind::AshCultist, 0);
+    CombatState combat(player, enemy, starterDeck(), 17);
+    combat.start();
+
+    assert(combat.player().status(StatusType::Strength) >= 1);
 }
 
 void testRewardsComeFromPool()
@@ -119,7 +149,9 @@ int main()
     testCardSpendsEnergyAndDealsDamage();
     testBlockPreventsEnemyDamage();
     testRunMapUnlocksNextNodes();
-    testRunAdvancesAcrossThreeActs();
+    testRunAdvancesAcrossThreeLevels();
+    testPotionSlotsUseAndDiscard();
+    testRelicAppliesAtCombatStart();
     testRewardsComeFromPool();
 
     std::cout << "All Mini Spire core tests passed.\n";

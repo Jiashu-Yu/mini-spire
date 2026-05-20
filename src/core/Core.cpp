@@ -182,6 +182,11 @@ const std::vector<std::string>& Player::relics() const
     return relics_;
 }
 
+const std::array<std::optional<Potion>, 2>& Player::potions() const
+{
+    return potions_;
+}
+
 void Player::beginTurn()
 {
     clearBlock();
@@ -224,6 +229,36 @@ bool Player::spendGold(int amount)
 void Player::addRelic(std::string relic)
 {
     relics_.push_back(std::move(relic));
+}
+
+bool Player::addPotion(Potion potion)
+{
+    for (auto& slot : potions_) {
+        if (!slot.has_value()) {
+            slot = std::move(potion);
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<Potion> Player::takePotion(std::size_t slot)
+{
+    if (slot >= potions_.size() || !potions_.at(slot).has_value()) {
+        return std::nullopt;
+    }
+    std::optional<Potion> potion = potions_.at(slot);
+    potions_.at(slot).reset();
+    return potion;
+}
+
+bool Player::discardPotion(std::size_t slot)
+{
+    if (slot >= potions_.size() || !potions_.at(slot).has_value()) {
+        return false;
+    }
+    potions_.at(slot).reset();
+    return true;
 }
 
 void Player::setGold(int gold)
@@ -403,6 +438,7 @@ void CombatState::start()
     started_ = true;
     log("战斗开始：面对 " + enemy_.name());
     beginPlayerTurn();
+    applyRelicsAtCombatStart();
 }
 
 PlayResult CombatState::playCard(std::size_t handIndex)
@@ -441,6 +477,37 @@ PlayResult CombatState::playCard(std::size_t handIndex)
         log(enemy_.name() + " 半血启动核心，力量上升并获得格挡。");
     }
     checkEndConditions();
+    return {true, "ok"};
+}
+
+PlayResult CombatState::usePotion(std::size_t slot)
+{
+    if (finished()) {
+        return {false, "战斗已经结束"};
+    }
+
+    std::optional<Potion> potion = player_.takePotion(slot);
+    if (!potion) {
+        return {false, "这个药水槽是空的"};
+    }
+
+    log("使用药水：" + potion->name);
+    for (const Effect& effect : potion->effects) {
+        applyPotionEffect(*potion, effect);
+        checkEndConditions();
+        if (finished()) {
+            break;
+        }
+    }
+    return {true, "ok"};
+}
+
+PlayResult CombatState::discardPotion(std::size_t slot)
+{
+    if (!player_.discardPotion(slot)) {
+        return {false, "这个药水槽是空的"};
+    }
+    log("丢弃了一瓶药水。");
     return {true, "ok"};
 }
 
@@ -528,6 +595,34 @@ void CombatState::beginPlayerTurn()
     log("第 " + std::to_string(turn_) + " 回合，你抽 5 张牌。");
 }
 
+void CombatState::applyRelicsAtCombatStart()
+{
+    for (const std::string& relic : player_.relics()) {
+        if (relic == "晨星羽饰") {
+            player_.addStatus(StatusType::Strength, 1);
+            log("晨星羽饰：开局力量 +1。");
+        } else if (relic == "裂纹罗盘" || relic == "铜质罗盘") {
+            deck_.drawCards(1, rng_);
+            log(relic + "：开局额外抽 1 张牌。");
+        } else if (relic == "余烬护符") {
+            player_.gainBlock(6);
+            log("余烬护符：开局获得 6 格挡。");
+        } else if (relic == "晶化沙漏") {
+            player_.gainEnergy(1);
+            log("晶化沙漏：开局获得 1 能量。");
+        } else if (relic == "旧塔徽章") {
+            player_.heal(2);
+            log("旧塔徽章：开局回复 2 生命。");
+        } else if (relic == "静默钟摆") {
+            enemy_.addStatus(StatusType::Weak, 1);
+            log("静默钟摆：敌人开局获得 1 虚弱。");
+        } else if (relic.find("Boss 印记") != std::string::npos) {
+            player_.addStatus(StatusType::Strength, 1);
+            log(relic + "：开局力量 +1。");
+        }
+    }
+}
+
 void CombatState::runEnemyTurn()
 {
     enemy_.clearBlock();
@@ -581,6 +676,49 @@ void CombatState::applyCardEffect(const Card& card, const Effect& effect)
     case EffectType::Ritual:
         player_.addStatus(StatusType::Ritual, effect.amount);
         log("获得 " + std::to_string(effect.amount) + " 层仪式。");
+        break;
+    }
+}
+
+void CombatState::applyPotionEffect(const Potion& potion, const Effect& effect)
+{
+    switch (effect.type) {
+    case EffectType::Damage: {
+        const int dealt = enemy_.receiveDamage(scaledIncomingDamage(enemy_, effect.amount));
+        log(potion.name + " 造成 " + std::to_string(dealt) + " 点伤害。");
+        break;
+    }
+    case EffectType::Block:
+        player_.gainBlock(effect.amount);
+        log("药水提供 " + std::to_string(effect.amount) + " 点格挡。");
+        break;
+    case EffectType::Draw:
+        deck_.drawCards(effect.amount, rng_);
+        log("药水让你抽 " + std::to_string(effect.amount) + " 张牌。");
+        break;
+    case EffectType::Strength:
+        player_.addStatus(StatusType::Strength, effect.amount);
+        log("药水让力量 +" + std::to_string(effect.amount) + "。");
+        break;
+    case EffectType::Vulnerable:
+        enemy_.addStatus(StatusType::Vulnerable, effect.amount);
+        log(enemy_.name() + " 获得 " + std::to_string(effect.amount) + " 层易伤。");
+        break;
+    case EffectType::Weak:
+        enemy_.addStatus(StatusType::Weak, effect.amount);
+        log(enemy_.name() + " 获得 " + std::to_string(effect.amount) + " 层虚弱。");
+        break;
+    case EffectType::Heal:
+        player_.heal(effect.amount);
+        log("药水回复 " + std::to_string(effect.amount) + " 点生命。");
+        break;
+    case EffectType::GainEnergy:
+        player_.gainEnergy(effect.amount);
+        log("药水提供 " + std::to_string(effect.amount) + " 点能量。");
+        break;
+    case EffectType::Ritual:
+        player_.addStatus(StatusType::Ritual, effect.amount);
+        log("药水提供 " + std::to_string(effect.amount) + " 层仪式。");
         break;
     }
 }
@@ -663,8 +801,8 @@ void RunController::startNewRun(std::uint32_t seed)
     player_ = Player {};
     deck_ = starterDeck();
     activeNodeId_.reset();
-    floor_ = 0;
-    act_ = 1;
+    steps_ = 0;
+    level_ = 1;
     active_ = true;
     won_ = false;
     generateMap();
@@ -711,29 +849,29 @@ const std::optional<int>& RunController::activeNodeId() const
     return activeNodeId_;
 }
 
-int RunController::floor() const
+int RunController::steps() const
 {
-    return floor_;
+    return steps_;
 }
 
-int RunController::act() const
+int RunController::level() const
 {
-    return act_;
+    return level_;
 }
 
-int RunController::maxActs() const
+int RunController::maxLevels() const
 {
-    return maxActs_;
+    return maxLevels_;
 }
 
-bool RunController::finalAct() const
+bool RunController::finalLevel() const
 {
-    return act_ >= maxActs_;
+    return level_ >= maxLevels_;
 }
 
-std::string RunController::actName() const
+std::string RunController::levelName() const
 {
-    switch (act_) {
+    switch (level_) {
     case 1:
         return "第一层：灰烬地牢";
     case 2:
@@ -803,7 +941,7 @@ void RunController::completeActiveNode()
             candidate.available = false;
         }
     }
-    ++floor_;
+    ++steps_;
 
     for (int nextId : node->next) {
         if (MapNode* next = findNode(nextId)) {
@@ -817,26 +955,26 @@ Enemy RunController::makeEnemyForActiveNode()
 {
     const MapNode* node = activeNodeId_ ? findNode(*activeNodeId_) : nullptr;
     if (node == nullptr) {
-        return makeEnemy(EnemyKind::AshCultist, floor_);
+        return makeEnemy(EnemyKind::AshCultist, steps_);
     }
 
     if (node->type == NodeType::Boss) {
-        if (act_ == 1) {
-            return makeEnemy(EnemyKind::RootMatriarch, floor_);
+        if (level_ == 1) {
+            return makeEnemy(EnemyKind::RootMatriarch, steps_);
         }
-        if (act_ == 2) {
-            return makeEnemy(EnemyKind::ClockworkDragon, floor_);
+        if (level_ == 2) {
+            return makeEnemy(EnemyKind::ClockworkDragon, steps_);
         }
-        return makeEnemy(EnemyKind::SpireArchitect, floor_);
+        return makeEnemy(EnemyKind::SpireArchitect, steps_);
     }
     if (node->type == NodeType::Elite) {
-        if (act_ == 1) {
-            return makeEnemy(EnemyKind::IronSentinel, floor_);
+        if (level_ == 1) {
+            return makeEnemy(EnemyKind::IronSentinel, steps_);
         }
-        if (act_ == 2) {
-            return makeEnemy(EnemyKind::EmberDuelist, floor_);
+        if (level_ == 2) {
+            return makeEnemy(EnemyKind::EmberDuelist, steps_);
         }
-        return makeEnemy(EnemyKind::ChronoKnight, floor_);
+        return makeEnemy(EnemyKind::ChronoKnight, steps_);
     }
 
     std::vector<EnemyKind> normal {
@@ -844,12 +982,12 @@ Enemy RunController::makeEnemyForActiveNode()
         EnemyKind::AcidSlime,
         EnemyKind::BellGuard,
     };
-    if (act_ == 2) {
+    if (level_ == 2) {
         normal = {EnemyKind::ThornLurker, EnemyKind::CrystalWisp, EnemyKind::BellGuard};
-    } else if (act_ >= 3) {
+    } else if (level_ >= 3) {
         normal = {EnemyKind::NullPriest, EnemyKind::CrystalWisp, EnemyKind::ThornLurker};
     }
-    return makeEnemy(randomElement(normal, rng_), floor_);
+    return makeEnemy(randomElement(normal, rng_), steps_);
 }
 
 std::vector<Card> RunController::makeRewards(int count)
@@ -866,9 +1004,42 @@ std::vector<Card> RunController::makeShopCards(int count)
     return makeRewards(count);
 }
 
+std::vector<std::string> RunController::makeShopRelics(int count)
+{
+    const std::vector<std::string> pool {
+        "晨星羽饰",
+        "裂纹罗盘",
+        "余烬护符",
+        "晶化沙漏",
+        "旧塔徽章",
+        "静默钟摆",
+    };
+
+    std::vector<std::string> relics;
+    for (int i = 0; i < count; ++i) {
+        relics.push_back(randomElement(pool, rng_));
+    }
+    return relics;
+}
+
+std::vector<Potion> RunController::makeShopPotions(int count)
+{
+    std::vector<Potion> potions;
+    for (int i = 0; i < count; ++i) {
+        potions.push_back(makeRandomPotion());
+    }
+    return potions;
+}
+
 Card RunController::makeRandomReward()
 {
     const std::vector<Card> pool = cardPool();
+    return randomElement(pool, rng_);
+}
+
+Potion RunController::makeRandomPotion()
+{
+    const std::vector<Potion> pool = potionPool();
     return randomElement(pool, rng_);
 }
 
@@ -884,13 +1055,13 @@ void RunController::syncPlayerAfterCombat(const Player& player)
     player_.setGold(gold);
 }
 
-void RunController::startNextAct()
+void RunController::startNextLevel()
 {
-    if (finalAct()) {
+    if (finalLevel()) {
         won_ = true;
         return;
     }
-    ++act_;
+    ++level_;
     activeNodeId_.reset();
     generateMap();
     unlockInitialNodes();
@@ -913,7 +1084,7 @@ void RunController::eventHeal()
 
 void RunController::generateMap()
 {
-    if (act_ == 1) {
+    if (level_ == 1) {
         map_ = {
             {0, 0, 0, NodeType::Battle, {2, 3}, false, false},
             {1, 0, 1, NodeType::Battle, {3, 4}, false, false},
@@ -928,7 +1099,7 @@ void RunController::generateMap()
         return;
     }
 
-    if (act_ == 2) {
+    if (level_ == 2) {
         map_ = {
             {0, 0, 0, NodeType::Battle, {3, 4}, false, false},
             {1, 0, 1, NodeType::Event, {4, 5}, false, false},
@@ -1090,9 +1261,22 @@ std::vector<Card> cardPool()
     };
 }
 
-Enemy makeEnemy(EnemyKind kind, int floor)
+std::vector<Potion> potionPool()
 {
-    const int scale = std::max(0, floor);
+    return {
+        {"fire_potion", "火焰药水", "造成 20 伤害", {{EffectType::Damage, 20}}},
+        {"guard_potion", "钢肤药水", "获得 14 格挡", {{EffectType::Block, 14}}},
+        {"heal_potion", "活力药水", "回复 12 生命", {{EffectType::Heal, 12}}},
+        {"energy_potion", "能量药水", "获得 2 能量", {{EffectType::GainEnergy, 2}}},
+        {"weak_potion", "虚弱药水", "施加 2 虚弱", {{EffectType::Weak, 2}}},
+        {"power_potion", "力量药水", "力量 +2", {{EffectType::Strength, 2}}},
+        {"draw_potion", "洞察药水", "抽 3 张牌", {{EffectType::Draw, 3}}},
+    };
+}
+
+Enemy makeEnemy(EnemyKind kind, int progress)
+{
+    const int scale = std::max(0, progress);
     switch (kind) {
     case EnemyKind::AshCultist:
         return Enemy {
@@ -1230,7 +1414,7 @@ Enemy makeEnemy(EnemyKind kind, int floor)
             },
         };
     }
-    return makeEnemy(EnemyKind::AshCultist, floor);
+    return makeEnemy(EnemyKind::AshCultist, progress);
 }
 
 } // namespace minispire

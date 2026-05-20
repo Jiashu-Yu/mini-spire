@@ -53,7 +53,7 @@ std::unique_ptr<Scene> makeMainMenuScene(GameApp& app);
 std::unique_ptr<Scene> makeMapScene(GameApp& app);
 std::unique_ptr<Scene> makeCombatScene(GameApp& app);
 std::unique_ptr<Scene> makeRewardScene(GameApp& app);
-std::unique_ptr<Scene> makeActRewardScene(GameApp& app);
+std::unique_ptr<Scene> makeLevelRewardScene(GameApp& app);
 std::unique_ptr<Scene> makeShopScene(GameApp& app);
 std::unique_ptr<Scene> makeRestScene(GameApp& app);
 std::unique_ptr<Scene> makeEventScene(GameApp& app);
