@@ -875,9 +875,9 @@ public:
     explicit LevelRewardScene(GameApp& app)
         : Scene(app)
         , rewardCards_(app.runState().makeRewards(3))
-        , vitalityButton_({418.0F, 484.0F, 220.0F, 52.0F}, "生命核心")
-        , treasureButton_({530.0F, 548.0F, 220.0F, 52.0F}, "战利品箱")
-        , relicButton_({642.0F, 484.0F, 220.0F, 52.0F}, "Boss 圣遗物")
+        , vitalityButton_({226.0F, 548.0F, 244.0F, 58.0F}, "生命核心")
+        , treasureButton_({518.0F, 548.0F, 244.0F, 58.0F}, "战利品箱")
+        , relicButton_({810.0F, 548.0F, 244.0F, 58.0F}, "Boss 圣遗物")
         , completedLevel_(app.runState().level())
     {
     }
@@ -913,20 +913,61 @@ public:
 
         const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         for (std::size_t i = 0; i < rewardCards_.size(); ++i) {
-            const sf::FloatRect rect = rewardCardRect(i);
+            const sf::FloatRect rect = levelRewardCardRect(i);
             ui::drawCard(window, app_.resources(), rewardCards_.at(i), rect, true, rect.contains(mouse));
         }
 
-        ui::drawPanel(window, {390.0F, 452.0F, 500.0F, 170.0F}, sf::Color(31, 35, 48), sf::Color(90, 101, 128), 1.0F);
-        ui::drawText(window, app_.resources(), "生命核心：最大生命 +8，回复 28", {430.0F, 462.0F}, 16, sf::Color(224, 220, 208));
-        ui::drawText(window, app_.resources(), "战利品箱：金币 +120，获得左侧卡牌", {430.0F, 526.0F}, 16, sf::Color(224, 220, 208));
-        ui::drawText(window, app_.resources(), "Boss 圣遗物：获得印记，获得中间卡牌", {430.0F, 590.0F}, 16, sf::Color(224, 220, 208));
+        drawRewardOption(window,
+                         {210.0F, 466.0F, 276.0F, 160.0F},
+                         "生命核心",
+                         "最大生命 +8",
+                         "立即回复 28 生命",
+                         vitalityButton_,
+                         mouse);
+        drawRewardOption(window,
+                         {502.0F, 466.0F, 276.0F, 160.0F},
+                         "战利品箱",
+                         "金币 +120",
+                         "获得左侧奖励卡牌",
+                         treasureButton_,
+                         mouse);
+        drawRewardOption(window,
+                         {794.0F, 466.0F, 276.0F, 160.0F},
+                         "Boss 圣遗物",
+                         "获得 Boss 印记",
+                         "获得中间奖励卡牌",
+                         relicButton_,
+                         mouse);
         vitalityButton_.draw(window, app_.resources());
         treasureButton_.draw(window, app_.resources());
         relicButton_.draw(window, app_.resources());
     }
 
 private:
+    sf::FloatRect levelRewardCardRect(std::size_t index) const
+    {
+        return {340.0F + static_cast<float>(index) * 210.0F, 236.0F, 150.0F, 208.0F};
+    }
+
+    void drawRewardOption(sf::RenderWindow& window,
+                          sf::FloatRect rect,
+                          const std::string& title,
+                          const std::string& line1,
+                          const std::string& line2,
+                          const ui::Button& button,
+                          sf::Vector2f mouse) const
+    {
+        const bool hovered = rect.contains(mouse) || button.contains(mouse);
+        ui::drawPanel(window,
+                      rect,
+                      hovered ? sf::Color(43, 49, 68) : sf::Color(31, 35, 48),
+                      hovered ? ui::accentColor() : sf::Color(90, 101, 128),
+                      hovered ? 2.0F : 1.0F);
+        ui::drawText(window, app_.resources(), title, {rect.left + 20.0F, rect.top + 16.0F}, 21, sf::Color(245, 231, 190));
+        ui::drawText(window, app_.resources(), line1, {rect.left + 20.0F, rect.top + 52.0F}, 16, sf::Color(224, 220, 208));
+        ui::drawText(window, app_.resources(), line2, {rect.left + 20.0F, rect.top + 78.0F}, 16, sf::Color(224, 220, 208));
+    }
+
     std::vector<Card> rewardCards_;
     ui::Button vitalityButton_;
     ui::Button treasureButton_;
