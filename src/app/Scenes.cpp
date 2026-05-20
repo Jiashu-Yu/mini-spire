@@ -131,27 +131,104 @@ sf::Vector2f nodePosition(const std::vector<MapNode>& nodes, const MapNode& node
     const int count = std::max(1, nodesInRow(nodes, node.row));
     const float spacing = 230.0F;
     const float x = ui::WindowWidth / 2.0F + (static_cast<float>(node.lane) - (static_cast<float>(count) - 1.0F) / 2.0F) * spacing;
-    const float y = 142.0F + static_cast<float>(node.row) * 104.0F;
+    const float y = 178.0F + static_cast<float>(node.row) * 100.0F;
     return {x, y};
 }
 
-std::string nodeGlyph(NodeType type)
+void drawSwordIcon(sf::RenderWindow& window, sf::Vector2f center, sf::Color color)
+{
+    sf::RectangleShape blade({6.0F, 36.0F});
+    blade.setOrigin(3.0F, 32.0F);
+    blade.setPosition(center.x + 7.0F, center.y - 1.0F);
+    blade.setRotation(38.0F);
+    blade.setFillColor(color);
+    window.draw(blade);
+
+    sf::RectangleShape guard({24.0F, 5.0F});
+    guard.setOrigin(12.0F, 2.5F);
+    guard.setPosition(center.x - 4.0F, center.y + 11.0F);
+    guard.setRotation(38.0F);
+    guard.setFillColor(color);
+    window.draw(guard);
+
+    sf::CircleShape pommel(4.0F);
+    pommel.setOrigin(4.0F, 4.0F);
+    pommel.setPosition(center.x - 15.0F, center.y + 22.0F);
+    pommel.setFillColor(color);
+    window.draw(pommel);
+}
+
+void drawNodeIcon(sf::RenderWindow& window, const ResourceManager& resources, NodeType type, sf::Vector2f center, sf::Color color)
 {
     switch (type) {
     case NodeType::Battle:
-        return "剑";
-    case NodeType::Elite:
-        return "精";
-    case NodeType::Boss:
-        return "王";
-    case NodeType::Shop:
-        return "店";
-    case NodeType::Rest:
-        return "息";
-    case NodeType::Event:
-        return "?";
+        drawSwordIcon(window, center, color);
+        break;
+    case NodeType::Elite: {
+        sf::ConvexShape crown;
+        crown.setPointCount(5);
+        crown.setPoint(0, {center.x - 20.0F, center.y + 15.0F});
+        crown.setPoint(1, {center.x - 14.0F, center.y - 12.0F});
+        crown.setPoint(2, {center.x, center.y + 3.0F});
+        crown.setPoint(3, {center.x + 14.0F, center.y - 12.0F});
+        crown.setPoint(4, {center.x + 20.0F, center.y + 15.0F});
+        crown.setFillColor(color);
+        window.draw(crown);
+        break;
     }
-    return "?";
+    case NodeType::Boss: {
+        sf::CircleShape eye(18.0F);
+        eye.setOrigin(18.0F, 18.0F);
+        eye.setPosition(center);
+        eye.setScale(1.25F, 0.72F);
+        eye.setFillColor(sf::Color::Transparent);
+        eye.setOutlineColor(color);
+        eye.setOutlineThickness(3.0F);
+        window.draw(eye);
+        sf::CircleShape pupil(7.0F);
+        pupil.setOrigin(7.0F, 7.0F);
+        pupil.setPosition(center);
+        pupil.setFillColor(color);
+        window.draw(pupil);
+        break;
+    }
+    case NodeType::Shop: {
+        sf::RectangleShape awning({36.0F, 10.0F});
+        awning.setOrigin(18.0F, 5.0F);
+        awning.setPosition(center.x, center.y - 11.0F);
+        awning.setFillColor(color);
+        window.draw(awning);
+        sf::RectangleShape counter({30.0F, 20.0F});
+        counter.setOrigin(15.0F, 10.0F);
+        counter.setPosition(center.x, center.y + 8.0F);
+        counter.setFillColor(sf::Color::Transparent);
+        counter.setOutlineColor(color);
+        counter.setOutlineThickness(3.0F);
+        window.draw(counter);
+        break;
+    }
+    case NodeType::Rest: {
+        sf::CircleShape moon(17.0F);
+        moon.setOrigin(17.0F, 17.0F);
+        moon.setPosition(center.x - 3.0F, center.y);
+        moon.setFillColor(color);
+        window.draw(moon);
+        sf::CircleShape cutout(17.0F);
+        cutout.setOrigin(17.0F, 17.0F);
+        cutout.setPosition(center.x + 7.0F, center.y - 4.0F);
+        cutout.setFillColor(sf::Color(35, 38, 50));
+        window.draw(cutout);
+        break;
+    }
+    case NodeType::Event: {
+        sf::Text mark = ui::makeText(resources, "?", 31, color);
+        const sf::FloatRect bounds = mark.getLocalBounds();
+        mark.setOrigin(bounds.left + bounds.width / 2.0F, bounds.top + bounds.height / 2.0F);
+        mark.setPosition(center.x, center.y - 4.0F);
+        window.draw(mark);
+        break;
+    }
+    }
 }
 
 void drawVisualEffect(sf::RenderWindow& window, const ResourceManager& resources, const VisualEffect& effect)
@@ -450,8 +527,8 @@ public:
     void render(sf::RenderWindow& window) override
     {
         drawTopBar(window, app_);
-        ui::drawText(window, app_.resources(), app_.runState().levelName(), {500.0F, 76.0F}, 26, ui::accentColor());
-        ui::drawText(window, app_.resources(), "选择下一处节点", {536.0F, 108.0F}, 22, sf::Color::White);
+        ui::drawText(window, app_.resources(), app_.runState().levelName(), {34.0F, 82.0F}, 24, ui::accentColor());
+        ui::drawText(window, app_.resources(), "选择下一处节点", {34.0F, 116.0F}, 18, sf::Color(224, 224, 232));
 
         const std::vector<MapNode>& nodes = app_.runState().map();
         for (const MapNode& node : nodes) {
@@ -486,11 +563,7 @@ public:
             circle.setOutlineThickness(node.available && !node.completed ? 3.0F : 1.0F);
             window.draw(circle);
 
-            sf::Text glyph = ui::makeText(app_.resources(), nodeGlyph(node.type), 24, node.available || node.completed ? sf::Color::White : sf::Color(120, 124, 140));
-            const sf::FloatRect bounds = glyph.getLocalBounds();
-            glyph.setOrigin(bounds.left + bounds.width / 2.0F, bounds.top + bounds.height / 2.0F);
-            glyph.setPosition(center.x, center.y - 4.0F);
-            window.draw(glyph);
+            drawNodeIcon(window, app_.resources(), node.type, center, node.available || node.completed ? sf::Color::White : sf::Color(120, 124, 140));
             ui::drawText(window, app_.resources(), toString(node.type), {center.x - 28.0F, center.y + 42.0F}, 14, sf::Color(218, 216, 205));
         }
     }
