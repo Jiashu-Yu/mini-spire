@@ -6,28 +6,42 @@ Mini Spire 是一个用 **C++ + SFML** 实现的原创卡牌爬塔游戏竖切�
 
 ## 当前内容
 
-- 1 名角色：裂隙旅人
-- 12 张初始牌，32 张奖励卡牌
+- 3 名可选角色：裂隙旅人、余烬使徒、晶盾守卫
+- 每名角色拥有独立初始牌组与专属奖励卡池
 - 6 个普通敌人、3 个精英敌人、3 个 Boss
 - 3 层爬塔流程，每层击败 Boss 后领取奖励并进入下一层
 - 商店支持购买卡牌、圣遗物和药水
 - 玩家有 2 个药水槽，战斗中可左键使用、右键丢弃药水
+- 最高 10 张手牌，超过上限的抽牌会自动进入弃牌堆
+- 支持地图界面存档并返回主菜单，主菜单可继续游戏
+- 支持历史记录：总局数、成功次数、最近 5 局详情
 - 圣遗物拥有开局被动效果，例如额外抽牌、格挡、力量或让敌人虚弱
 - 地图、战斗、奖励、商店、休息、事件、胜利/失败界面
 - 鼠标点击操作、卡牌 hover、血条、格挡、敌人意图、战斗日志
-- 程序化角色/敌人造型、卡牌效果徽章、攻击/护盾/治疗/状态战斗特效
-- 纯逻辑测试：战斗起手、能量消耗、伤害、格挡、地图解锁、奖励生成
+- PNG 角色、敌人和 Boss 立绘，缺失贴图时才回退到程序化绘制
+- PNG 主菜单背景、三层地图主题背景和三层战斗舞台背景
+- 全局帮助文档：顶部 `?` 按钮或 `F1` 随时查看规则说明
+- 默认 1600×900 可缩放窗口，支持 `F11` / `Alt+Enter` 切换全屏
+- 卡牌效果徽章、攻击/护盾/治疗/状态战斗特效
+- 纯逻辑测试：战斗起手、能量消耗、伤害、格挡、地图解锁、奖励生成、存档历史
 
 ## 游戏操作
 
 - 主菜单点击 `开始爬塔`。
+- 如果已有存档，主菜单会显示 `继续游戏`。
+- 主菜单点击 `历史记录` 可以查看总局数、成功次数和最近 5 局详情。
+- 任意界面点击右上角 `?` 或按 `F1` 可以打开帮助文档；按 `Esc` 关闭。
+- 拖拽窗口边缘可以缩放；按 `F11` 或 `Alt+Enter` 可以切换全屏。
 - 地图中点击高亮节点进入战斗、商店、休息或事件。
+- 地图中点击 `存档并返回` 会保存当前 run 并回到主菜单。
 - 战斗中点击手牌出牌。
 - 点击 `结束回合` 让敌人行动。
+- 药水槽在战斗中左键使用、右键丢弃；使用后对应槽位会立即变空。
 - 战斗胜利后选择一张奖励牌，或跳过拿金币。
 - 顶部 `楼层 1/3` 表示当前大层，`步数` 表示这局已经走过多少个节点。
-- 每层击败 Boss 后选择一份 Boss 奖励并进入下一层。
+- 第 1/2 层击败 Boss 后进入剧情奖励页，生命回满，再选择一份 Boss 奖励进入下一层。
 - 第三层击败最终 Boss 后通关。
+- 爬塔失败后可以返回主菜单，不会直接关闭程序。
 
 ## 环境要求
 
@@ -44,9 +58,39 @@ Mini Spire 是一个用 **C++ + SFML** 实现的原创卡牌爬塔游戏竖切�
 
 ## 从 GitHub 克隆
 
+如果你不熟悉 Git，也可以在 GitHub 页面点击绿色 `Code` 按钮，然后点击 `Download ZIP`，解压后进入项目文件夹。
+
 ```powershell
 git clone https://github.com/Jiashu-Yu/mini-spire.git
 cd mini-spire
+```
+
+## 最简单运行方式（Windows）
+
+如果你只是想玩游戏，推荐按下面的步骤走：
+
+1. 安装 Visual Studio 2022，并勾选 `Desktop development with C++`。
+2. 下载 SFML 2.6.2 的 `Visual C++ 17 (2022) - 64-bit` 版本。
+3. 把 SFML 解压到：
+
+   ```text
+   D:\Libraries\SFML-2.6.2
+   ```
+
+4. 在项目文件夹空白处按住 `Shift` 并点击鼠标右键，选择 `在终端中打开` 或 `在 PowerShell 中打开`。
+5. 执行：
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\scripts\run_windows.ps1
+   ```
+
+脚本会自动查找 Visual Studio、配置 CMake、编译游戏、复制 SFML DLL、运行测试，然后启动 `mini_spire.exe`。
+
+如果你的 SFML 解压到了别的位置，例如 `C:\Tools\SFML-2.6.2`，运行：
+
+```powershell
+.\scripts\run_windows.ps1 -SfmlRoot "C:\Tools\SFML-2.6.2"
 ```
 
 ## 安装 SFML
@@ -215,6 +259,7 @@ cmake -S . -B build/sfml-x64 \
 include/minispire/
   Core.h        核心规则接口
   GameApp.h     SFML 应用入口
+  Layout.h      响应式界面布局
   Scene.h       场景基类
   UI.h          UI 绘制工具
 
@@ -224,7 +269,14 @@ src/core/
 src/app/
   GameApp.cpp   窗口、资源、场景切换
   Scenes.cpp    主菜单、地图、战斗、奖励、商店等场景
-  UI.cpp        按钮、卡牌、血条、角色面板、程序化头像/敌人造型
+  UI.cpp        按钮、卡牌、血条、角色面板、角色/敌人贴图绘制
+
+assets/images/
+  backgrounds/  主菜单、三层地图和三层战斗背景图
+  sprites/      玩家、普通敌人、精英敌人和 Boss 透明 PNG
+
+scripts/
+  run_windows.ps1  Windows 一键构建、测试并运行脚本
 
 tests/
   core_tests.cpp  纯规则层测试
@@ -299,27 +351,27 @@ UI 不直接修改生命和牌堆，而是调用 `CombatState` 的公开接口�
 - 商店卡牌
 - 商店圣遗物和药水
 - 两个药水槽
+- 存档、读档和历史记录
+- Boss 后剧情恢复
 - 休息和事件
 - 进入下一层
 
 它相当于“整局游戏的导演”。
 
-### 角色、Boss 形象和战斗特效
+### 美术资源和战斗特效
 
-当前版本先用 SFML 几何图元绘制角色和敌人：
+当前版本已经把主要美术从简单几何图形升级为 PNG 资产：
 
-- `ui::drawPlayerSprite` 绘制玩家头像。
-- `ui::drawEnemySprite` 根据 `EnemyKind` 绘制不同敌人/Boss 的颜色、轮廓和标记。
-- `CombatScene` 中的 `VisualEffect` 负责攻击、护盾、治疗、能量、Debuff、Boss 脉冲等短动画。
+- `ResourceManager` 负责加载 `assets/images/` 下的 `sf::Texture`，并用 key 提供给 UI 层。
+- `drawPlayerSprite` 会根据角色定义中的 `spriteKey` 绘制对应玩家立绘。
+- `drawEnemySprite` 根据 `EnemyKind` 映射到普通敌人、精英敌人和 Boss 的透明 PNG。
+- 主菜单和三层地图背景优先绘制 `backgrounds/` 下的图片。
+- 战斗场景按当前楼层绘制专用舞台背景，让角色、敌人和卡牌不再漂在纯色面板上。
+- 如果某张图片缺失，UI 会回退到程序化绘制，保证游戏仍然可以运行。
+- `CombatScene` 中的 `VisualEffect` 仍然负责攻击、护盾、治疗、能量、Debuff、Boss 脉冲等短动画。
 - `ui::drawCard` 会根据卡牌的 `Effect` 在卡牌底部画效果徽章。
 
-如果以后要换成真正的 PNG/Sprite 素材，推荐做法是：
-
-1. 在 `assets/images/` 下放入图片，例如 `player.png`、`boss_root_matriarch.png`。
-2. 在 `ResourceManager` 中增加 `sf::Texture` 缓存。
-3. 在 `drawPlayerSprite` / `drawEnemySprite` 中优先绘制贴图，贴图不存在时保留当前程序化绘制作为 fallback。
-
-这样不会影响 `CombatState`、`RunController` 等规则层代码。
+这体现了一个重要 OOP 思路：规则层 `CombatState`、`RunController` 不知道图片在哪里，也不负责画图。美术替换集中在 `ResourceManager` 和 UI 绘制函数里，因此以后升级素材不会破坏战斗规则。
 
 ## 后续扩展建议
 
@@ -327,6 +379,6 @@ UI 不直接修改生命和牌堆，而是调用 `CombatState` 的公开接口�
 2. 把敌人和卡牌数据移到 JSON，练习数据驱动设计。
 3. 增加 `Relic` 类，让遗物能监听战斗事件。
 4. 给 `CombatState` 增加更细的事件类型，用于动画和音效。
-5. 增加存档系统，保存当前 run。
-6. 增加 Release 构建和 GitHub Releases，方便别人直接下载 exe 游玩。
-7. 用真实 PNG/Sprite 替换当前程序化角色和 Boss 造型。
+5. 增加更完整的卡牌升级和事件分支。
+6. 增加 GitHub Releases，方便别人直接下载 exe 游玩。
+7. 为每张卡牌增加独立卡面插画，并把卡牌数据逐步迁移到 JSON。

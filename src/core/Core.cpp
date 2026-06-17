@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -31,6 +34,59 @@ const T& randomElement(const std::vector<T>& values, std::mt19937& rng)
 {
     std::uniform_int_distribution<std::size_t> distribution(0, values.size() - 1);
     return values.at(distribution(rng));
+}
+
+std::optional<Card> findKnownCard(const std::string& id)
+{
+    std::vector<Card> cards;
+    for (const CharacterDefinition& character : characterDefinitions()) {
+        cards.insert(cards.end(), character.startingDeck.begin(), character.startingDeck.end());
+        cards.insert(cards.end(), character.cardPool.begin(), character.cardPool.end());
+    }
+    const auto found = std::find_if(cards.begin(), cards.end(), [&id](const Card& card) {
+        return card.id == id;
+    });
+    if (found == cards.end()) {
+        return std::nullopt;
+    }
+    return *found;
+}
+
+CharacterId characterIdFromInt(int value)
+{
+    switch (value) {
+    case 1:
+        return CharacterId::EmberAdept;
+    case 2:
+        return CharacterId::CrystalWarden;
+    default:
+        return CharacterId::RiftTraveler;
+    }
+}
+
+int characterIdToInt(CharacterId id)
+{
+    switch (id) {
+    case CharacterId::RiftTraveler:
+        return 0;
+    case CharacterId::EmberAdept:
+        return 1;
+    case CharacterId::CrystalWarden:
+        return 2;
+    }
+    return 0;
+}
+
+std::optional<Potion> findKnownPotion(const std::string& id)
+{
+    const std::vector<Potion> potions = potionPool();
+    const auto found = std::find_if(potions.begin(), potions.end(), [&id](const Potion& potion) {
+        return potion.id == id;
+    });
+    if (found == potions.end()) {
+        return std::nullopt;
+    }
+    return *found;
 }
 
 std::string cardTypePrefix(CardType type)
@@ -146,6 +202,11 @@ void Creature::clearBlock()
     block_ = 0;
 }
 
+void Creature::clearStatuses()
+{
+    statuses_.clear();
+}
+
 void Creature::setHp(int hp)
 {
     hp_ = std::clamp(hp, 0, maxHp_);
@@ -159,6 +220,14 @@ void Creature::setMaxHp(int maxHp)
 
 Player::Player()
     : Creature("裂隙旅人", 72)
+{
+}
+
+Player::Player(std::string name, int maxHp, int maxEnergy, int gold)
+    : Creature(std::move(name), maxHp)
+    , maxEnergy_(std::max(1, maxEnergy))
+    , energy_(std::max(1, maxEnergy))
+    , gold_(clampNonNegative(gold))
 {
 }
 
@@ -261,9 +330,23 @@ bool Player::discardPotion(std::size_t slot)
     return true;
 }
 
+void Player::setPotion(std::size_t slot, std::optional<Potion> potion)
+{
+    if (slot >= potions_.size()) {
+        return;
+    }
+    potions_.at(slot) = std::move(potion);
+}
+
 void Player::setGold(int gold)
 {
     gold_ = clampNonNegative(gold);
+}
+
+void Player::setMaxEnergy(int maxEnergy)
+{
+    maxEnergy_ = std::max(1, maxEnergy);
+    energy_ = std::min(energy_, maxEnergy_);
 }
 
 Enemy::Enemy(EnemyKind kind, std::string name, int maxHp, std::vector<EnemyMove> moves)
@@ -345,7 +428,11 @@ void Deck::drawCards(int count, std::mt19937& rng)
         if (drawPile_.empty()) {
             return;
         }
-        hand_.push_back(drawPile_.back());
+        if (hand_.size() < MaxHandSize) {
+            hand_.push_back(drawPile_.back());
+        } else {
+            discardPile_.push_back(drawPile_.back());
+        }
         drawPile_.pop_back();
     }
 }
@@ -601,6 +688,12 @@ void CombatState::applyRelicsAtCombatStart()
         if (relic == "晨星羽饰") {
             player_.addStatus(StatusType::Strength, 1);
             log("晨星羽饰：开局力量 +1。");
+        } else if (relic == "余烬血脉") {
+            player_.addStatus(StatusType::Strength, 2);
+            log("余烬血脉：开局力量 +2。");
+        } else if (relic == "晶盾核心") {
+            player_.gainBlock(8);
+            log("晶盾核心：开局获得 8 格挡。");
         } else if (relic == "裂纹罗盘" || relic == "铜质罗盘") {
             deck_.drawCards(1, rng_);
             log(relic + "：开局额外抽 1 张牌。");
@@ -797,14 +890,25 @@ RunController::RunController()
 
 void RunController::startNewRun(std::uint32_t seed)
 {
+    startNewRun(CharacterId::RiftTraveler, seed);
+}
+
+void RunController::startNewRun(CharacterId character, std::uint32_t seed)
+{
     rng_.seed(seed);
-    player_ = Player {};
-    deck_ = starterDeck();
+    characterId_ = character;
+    const CharacterDefinition& definition = characterDefinition(character);
+    player_ = Player {definition.name, definition.maxHp, definition.maxEnergy, definition.startingGold};
+    for (const std::string& relic : definition.startingRelics) {
+        player_.addRelic(relic);
+    }
+    deck_ = definition.startingDeck;
     activeNodeId_.reset();
     steps_ = 0;
     level_ = 1;
     active_ = true;
     won_ = false;
+    resultRecorded_ = false;
     generateMap();
     unlockInitialNodes();
 }
@@ -822,6 +926,16 @@ bool RunController::won() const
 void RunController::setWon(bool won)
 {
     won_ = won;
+}
+
+CharacterId RunController::characterId() const
+{
+    return characterId_;
+}
+
+const CharacterDefinition& RunController::character() const
+{
+    return characterDefinition(characterId_);
 }
 
 const Player& RunController::player() const
@@ -922,6 +1036,11 @@ bool RunController::selectNode(int id)
         return false;
     }
     activeNodeId_ = id;
+    for (MapNode& node : map_) {
+        if (!node.completed) {
+            node.available = node.id == id;
+        }
+    }
     return true;
 }
 
@@ -1033,7 +1152,7 @@ std::vector<Potion> RunController::makeShopPotions(int count)
 
 Card RunController::makeRandomReward()
 {
-    const std::vector<Card> pool = cardPool();
+    const std::vector<Card> pool = cardPool(characterId_);
     return randomElement(pool, rng_);
 }
 
@@ -1046,6 +1165,23 @@ Potion RunController::makeRandomPotion()
 void RunController::addCardToDeck(const Card& card)
 {
     deck_.push_back(card);
+}
+
+PlayResult RunController::removeCardFromDeck(std::size_t index, int cost)
+{
+    if (index >= deck_.size()) {
+        return {false, "没有这张牌。"};
+    }
+    if (deck_.size() <= 5) {
+        return {false, "牌组太薄，不能继续移除。"};
+    }
+    if (cost < 0 || !player_.spendGold(cost)) {
+        return {false, "金币不足。"};
+    }
+
+    const std::string removedName = deck_.at(index).name;
+    deck_.erase(deck_.begin() + static_cast<std::ptrdiff_t>(index));
+    return {true, "移除了卡牌：" + removedName};
 }
 
 void RunController::syncPlayerAfterCombat(const Player& player)
@@ -1063,8 +1199,16 @@ void RunController::startNextLevel()
     }
     ++level_;
     activeNodeId_.reset();
+    player_.clearBlock();
+    player_.clearStatuses();
     generateMap();
     unlockInitialNodes();
+}
+
+void RunController::recoverAfterBoss()
+{
+    player_.clearBlock();
+    player_.heal(player_.maxHp());
 }
 
 void RunController::rest()
@@ -1080,6 +1224,239 @@ void RunController::eventGainGold()
 void RunController::eventHeal()
 {
     player_.heal(14);
+}
+
+bool RunController::saveToFile(const std::string& path) const
+{
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) {
+        return false;
+    }
+
+    out << "MINISPIRE_SAVE 3\n";
+    out << level_ << ' ' << maxLevels_ << ' ' << steps_ << ' ' << (active_ ? 1 : 0) << ' '
+        << (won_ ? 1 : 0) << ' ' << activeNodeId_.value_or(-1) << ' ' << characterIdToInt(characterId_) << '\n';
+    out << player_.hp() << ' ' << player_.maxHp() << ' ' << player_.gold() << '\n';
+
+    out << deck_.size() << '\n';
+    for (const Card& card : deck_) {
+        out << card.id << '\n';
+    }
+
+    out << player_.relics().size() << '\n';
+    for (const std::string& relic : player_.relics()) {
+        out << relic << '\n';
+    }
+
+    out << player_.potions().size() << '\n';
+    for (const std::optional<Potion>& potion : player_.potions()) {
+        out << (potion ? potion->id : "-") << '\n';
+    }
+
+    out << map_.size() << '\n';
+    for (const MapNode& node : map_) {
+        out << node.id << ' ' << node.row << ' ' << node.lane << ' ' << static_cast<int>(node.type) << ' '
+            << (node.available ? 1 : 0) << ' ' << (node.completed ? 1 : 0) << ' ' << node.next.size();
+        for (int nextId : node.next) {
+            out << ' ' << nextId;
+        }
+        out << '\n';
+    }
+
+    return static_cast<bool>(out);
+}
+
+bool RunController::loadFromFile(const std::string& path)
+{
+    std::ifstream in(path);
+    if (!in) {
+        return false;
+    }
+
+    std::string header;
+    int version = 0;
+    if (!(in >> header >> version) || header != "MINISPIRE_SAVE") {
+        return false;
+    }
+
+    int activeFlag = 0;
+    int wonFlag = 0;
+    int activeId = -1;
+    int characterValue = 0;
+    int hp = 0;
+    int maxHp = 0;
+    int gold = 0;
+    if (!(in >> level_ >> maxLevels_ >> steps_ >> activeFlag >> wonFlag >> activeId)) {
+        return false;
+    }
+    if (version >= 3 && !(in >> characterValue)) {
+        return false;
+    }
+    if (!(in >> hp >> maxHp >> gold)) {
+        return false;
+    }
+
+    characterId_ = characterIdFromInt(characterValue);
+    Player loadedPlayer(characterDefinition(characterId_).name, maxHp, characterDefinition(characterId_).maxEnergy, gold);
+    loadedPlayer.setMaxHp(maxHp);
+    loadedPlayer.setHp(hp);
+    loadedPlayer.setGold(gold);
+
+    std::size_t deckCount = 0;
+    if (!(in >> deckCount)) {
+        return false;
+    }
+    std::vector<Card> loadedDeck;
+    for (std::size_t i = 0; i < deckCount; ++i) {
+        std::string cardId;
+        in >> cardId;
+        if (std::optional<Card> card = findKnownCard(cardId)) {
+            loadedDeck.push_back(*card);
+        }
+    }
+    if (loadedDeck.empty()) {
+        loadedDeck = starterDeck(characterId_);
+    }
+
+    std::size_t relicCount = 0;
+    if (!(in >> relicCount)) {
+        return false;
+    }
+    in.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    for (std::size_t i = 0; i < relicCount; ++i) {
+        std::string relic;
+        std::getline(in, relic);
+        if (!relic.empty()) {
+            loadedPlayer.addRelic(relic);
+        }
+    }
+
+    std::size_t potionCount = 0;
+    if (!(in >> potionCount)) {
+        return false;
+    }
+    for (std::size_t i = 0; i < potionCount; ++i) {
+        std::string potionId;
+        in >> potionId;
+        if (potionId != "-") {
+            loadedPlayer.setPotion(i, findKnownPotion(potionId));
+        }
+    }
+
+    std::size_t mapCount = 0;
+    if (!(in >> mapCount)) {
+        return false;
+    }
+    std::vector<MapNode> loadedMap;
+    for (std::size_t i = 0; i < mapCount; ++i) {
+        MapNode node;
+        int type = 0;
+        int available = 0;
+        int completed = 0;
+        std::size_t nextCount = 0;
+        if (!(in >> node.id >> node.row >> node.lane >> type >> available >> completed >> nextCount)) {
+            return false;
+        }
+        node.type = static_cast<NodeType>(type);
+        node.available = available != 0;
+        node.completed = completed != 0;
+        node.next.clear();
+        for (std::size_t nextIndex = 0; nextIndex < nextCount; ++nextIndex) {
+            int nextId = 0;
+            in >> nextId;
+            node.next.push_back(nextId);
+        }
+        loadedMap.push_back(std::move(node));
+    }
+
+    player_ = std::move(loadedPlayer);
+    deck_ = std::move(loadedDeck);
+    map_ = std::move(loadedMap);
+    if (map_.empty()) {
+        generateMap();
+        unlockInitialNodes();
+    }
+    activeNodeId_ = activeId >= 0 ? std::optional<int>(activeId) : std::nullopt;
+    active_ = activeFlag != 0;
+    won_ = wonFlag != 0;
+    resultRecorded_ = false;
+    rng_.seed(std::random_device{}());
+    return true;
+}
+
+bool RunController::deleteSaveFile(const std::string& path) const
+{
+    std::error_code error;
+    return std::filesystem::remove(path, error) || !std::filesystem::exists(path);
+}
+
+void RunController::recordRunResult(bool won, const std::string& historyPath)
+{
+    if (resultRecorded_) {
+        return;
+    }
+
+    RunHistorySummary summary = loadHistory(historyPath);
+    ++summary.totalRuns;
+    if (won) {
+        ++summary.wins;
+    }
+    summary.recent.insert(summary.recent.begin(),
+                          RunHistoryEntry {won, level_, maxLevels_, steps_, static_cast<int>(deck_.size()), player_.hp(), player_.maxHp()});
+    if (summary.recent.size() > 5) {
+        summary.recent.resize(5);
+    }
+
+    std::ofstream out(historyPath, std::ios::trunc);
+    if (out) {
+        out << "MINISPIRE_HISTORY 1\n";
+        out << summary.totalRuns << ' ' << summary.wins << '\n';
+        out << summary.recent.size() << '\n';
+        for (const RunHistoryEntry& entry : summary.recent) {
+            out << (entry.won ? 1 : 0) << ' ' << entry.level << ' ' << entry.maxLevels << ' ' << entry.steps << ' '
+                << entry.deckSize << ' ' << entry.hp << ' ' << entry.maxHp << '\n';
+        }
+    }
+
+    won_ = won;
+    active_ = false;
+    resultRecorded_ = true;
+    deleteSaveFile();
+}
+
+bool RunController::hasSaveFile(const std::string& path)
+{
+    return std::filesystem::exists(path);
+}
+
+RunHistorySummary RunController::loadHistory(const std::string& path)
+{
+    RunHistorySummary summary;
+    std::ifstream in(path);
+    if (!in) {
+        return summary;
+    }
+
+    std::string header;
+    int version = 0;
+    if (!(in >> header >> version) || header != "MINISPIRE_HISTORY") {
+        return summary;
+    }
+
+    std::size_t count = 0;
+    if (!(in >> summary.totalRuns >> summary.wins >> count)) {
+        return RunHistorySummary {};
+    }
+    for (std::size_t i = 0; i < count && i < 5; ++i) {
+        int won = 0;
+        RunHistoryEntry entry;
+        if (!(in >> won >> entry.level >> entry.maxLevels >> entry.steps >> entry.deckSize >> entry.hp >> entry.maxHp)) {
+            break;
+        }
+        entry.won = won != 0;
+        summary.recent.push_back(entry);
+    }
+    return summary;
 }
 
 void RunController::generateMap()
@@ -1175,9 +1552,46 @@ std::string toString(StatusType type)
     return "未知";
 }
 
-std::vector<Card> starterDeck()
+std::vector<Card> starterDeck(CharacterId character)
 {
     std::vector<Card> cards;
+    switch (character) {
+    case CharacterId::EmberAdept:
+        for (int i = 0; i < 5; ++i) {
+            cards.push_back(makeCard("strike", "打击", 1, CardType::Attack, "基础", "造成 6 伤害",
+                                     {{EffectType::Damage, 6}}));
+        }
+        for (int i = 0; i < 3; ++i) {
+            cards.push_back(makeCard("defend", "防御", 1, CardType::Skill, "基础", "获得 5 格挡",
+                                     {{EffectType::Block, 5}}));
+        }
+        cards.push_back(makeCard("ignite", "点燃", 1, CardType::Attack, "普通", "造成 7 伤害\n力量 +1",
+                                 {{EffectType::Damage, 7}, {EffectType::Strength, 1}}));
+        cards.push_back(makeCard("break_armor", "破甲", 1, CardType::Attack, "普通", "造成 6 伤害\n施加 2 易伤",
+                                 {{EffectType::Damage, 6}, {EffectType::Vulnerable, 2}}));
+        cards.push_back(makeCard("shout", "战吼", 1, CardType::Skill, "普通", "力量 +2",
+                                 {{EffectType::Strength, 2}}));
+        return cards;
+    case CharacterId::CrystalWarden:
+        for (int i = 0; i < 5; ++i) {
+            cards.push_back(makeCard("defend", "防御", 1, CardType::Skill, "基础", "获得 5 格挡",
+                                     {{EffectType::Block, 5}}));
+        }
+        for (int i = 0; i < 3; ++i) {
+            cards.push_back(makeCard("strike", "打击", 1, CardType::Attack, "基础", "造成 6 伤害",
+                                     {{EffectType::Damage, 6}}));
+        }
+        cards.push_back(makeCard("steady_guard", "稳固", 1, CardType::Skill, "基础", "获得 8 格挡",
+                                 {{EffectType::Block, 8}}));
+        cards.push_back(makeCard("shield", "盾墙", 1, CardType::Skill, "普通", "获得 9 格挡",
+                                 {{EffectType::Block, 9}}));
+        cards.push_back(makeCard("deep_breath", "深呼吸", 0, CardType::Skill, "普通", "回复 3 生命\n获得 3 格挡",
+                                 {{EffectType::Heal, 3}, {EffectType::Block, 3}}));
+        return cards;
+    case CharacterId::RiftTraveler:
+        break;
+    }
+
     for (int i = 0; i < 5; ++i) {
         cards.push_back(makeCard("strike", "打击", 1, CardType::Attack, "基础", "造成 6 伤害",
                                  {{EffectType::Damage, 6}}));
@@ -1191,74 +1605,153 @@ std::vector<Card> starterDeck()
     return cards;
 }
 
-std::vector<Card> cardPool()
+std::vector<Card> starterDeck()
 {
+    return starterDeck(CharacterId::RiftTraveler);
+}
+
+std::vector<Card> cardPool(CharacterId character)
+{
+    switch (character) {
+    case CharacterId::EmberAdept:
+        return {
+            makeCard("strike_plus", "精准斩", 1, CardType::Attack, "普通", "造成 9 伤害",
+                     {{EffectType::Damage, 9}}),
+            makeCard("double_stab", "双连刺", 1, CardType::Attack, "普通", "造成 5 伤害\n造成 5 伤害",
+                     {{EffectType::Damage, 5}, {EffectType::Damage, 5}}),
+            makeCard("shout", "战吼", 1, CardType::Skill, "普通", "力量 +2",
+                     {{EffectType::Strength, 2}}),
+            makeCard("break_armor", "破甲", 1, CardType::Attack, "普通", "造成 6 伤害\n施加 2 易伤",
+                     {{EffectType::Damage, 6}, {EffectType::Vulnerable, 2}}),
+            makeCard("cleave", "横扫", 2, CardType::Attack, "普通", "造成 16 伤害",
+                     {{EffectType::Damage, 16}}),
+            makeCard("ignite", "点燃", 1, CardType::Attack, "普通", "造成 7 伤害\n力量 +1",
+                     {{EffectType::Damage, 7}, {EffectType::Strength, 1}}),
+            makeCard("overrun", "压制", 2, CardType::Attack, "普通", "造成 14 伤害\n施加 1 易伤",
+                     {{EffectType::Damage, 14}, {EffectType::Vulnerable, 1}}),
+            makeCard("heavy_lance", "重枪突刺", 2, CardType::Attack, "普通", "造成 18 伤害\n施加 1 易伤",
+                     {{EffectType::Damage, 18}, {EffectType::Vulnerable, 1}}),
+            makeCard("ritual", "赤心仪式", 1, CardType::Skill, "稀有", "每回合力量 +1\n消耗",
+                     {{EffectType::Ritual, 1}}, true),
+            makeCard("blood_pact", "血契", 1, CardType::Power, "稀有", "力量 +3\n回复 3 生命",
+                     {{EffectType::Strength, 3}, {EffectType::Heal, 3}}),
+            makeCard("finisher", "终结", 3, CardType::Attack, "稀有", "造成 28 伤害",
+                     {{EffectType::Damage, 28}}),
+            makeCard("starfall", "星坠", 3, CardType::Attack, "稀有", "造成 20 伤害\n施加 2 易伤",
+                     {{EffectType::Damage, 20}, {EffectType::Vulnerable, 2}}),
+            makeCard("sun_spear", "日冕枪", 2, CardType::Attack, "稀有", "造成 12 伤害\n力量 +2",
+                     {{EffectType::Damage, 12}, {EffectType::Strength, 2}}),
+        };
+    case CharacterId::CrystalWarden:
+        return {
+            makeCard("shield", "盾墙", 1, CardType::Skill, "普通", "获得 9 格挡",
+                     {{EffectType::Block, 9}}),
+            makeCard("smoke", "烟幕", 1, CardType::Skill, "普通", "获得 6 格挡\n施加 1 虚弱",
+                     {{EffectType::Block, 6}, {EffectType::Weak, 1}}),
+            makeCard("first_aid", "急救", 1, CardType::Skill, "普通", "回复 6 生命\n消耗",
+                     {{EffectType::Heal, 6}}, true),
+            makeCard("fortify", "堡垒姿态", 2, CardType::Skill, "稀有", "获得 16 格挡",
+                     {{EffectType::Block, 16}}),
+            makeCard("storm", "风暴术", 2, CardType::Attack, "稀有", "造成 10 伤害\n施加 2 虚弱",
+                     {{EffectType::Damage, 10}, {EffectType::Weak, 2}}),
+            makeCard("pulse_guard", "脉冲护盾", 2, CardType::Skill, "稀有", "获得 12 格挡\n抽 1 张牌",
+                     {{EffectType::Block, 12}, {EffectType::Draw, 1}}),
+            makeCard("cleanse", "净化", 1, CardType::Skill, "普通", "回复 4 生命\n抽 1 张牌",
+                     {{EffectType::Heal, 4}, {EffectType::Draw, 1}}),
+            makeCard("chain_guard", "锁链防御", 1, CardType::Skill, "普通", "获得 7 格挡\n施加 1 虚弱",
+                     {{EffectType::Block, 7}, {EffectType::Weak, 1}}),
+            makeCard("iron_skin", "铁肤", 2, CardType::Skill, "普通", "获得 14 格挡\n力量 +1",
+                     {{EffectType::Block, 14}, {EffectType::Strength, 1}}),
+            makeCard("aegis_bloom", "盾花绽放", 2, CardType::Skill, "稀有", "获得 10 格挡\n回复 8 生命",
+                     {{EffectType::Block, 10}, {EffectType::Heal, 8}}),
+            makeCard("deep_breath", "深呼吸", 0, CardType::Skill, "普通", "回复 3 生命\n获得 3 格挡",
+                     {{EffectType::Heal, 3}, {EffectType::Block, 3}}),
+        };
+    case CharacterId::RiftTraveler:
+        break;
+    }
+
     return {
         makeCard("strike_plus", "精准斩", 1, CardType::Attack, "普通", "造成 9 伤害",
                  {{EffectType::Damage, 9}}),
-        makeCard("double_stab", "双连刺", 1, CardType::Attack, "普通", "造成 5 伤害\n造成 5 伤害",
-                 {{EffectType::Damage, 5}, {EffectType::Damage, 5}}),
-        makeCard("shield", "盾墙", 1, CardType::Skill, "普通", "获得 9 格挡",
-                 {{EffectType::Block, 9}}),
         makeCard("roll", "战术翻滚", 0, CardType::Skill, "普通", "获得 3 格挡\n抽 1 张牌",
                  {{EffectType::Block, 3}, {EffectType::Draw, 1}}),
-        makeCard("shout", "战吼", 1, CardType::Skill, "普通", "力量 +2",
-                 {{EffectType::Strength, 2}}),
-        makeCard("break_armor", "破甲", 1, CardType::Attack, "普通", "造成 6 伤害\n施加 2 易伤",
-                 {{EffectType::Damage, 6}, {EffectType::Vulnerable, 2}}),
-        makeCard("smoke", "烟幕", 1, CardType::Skill, "普通", "获得 6 格挡\n施加 1 虚弱",
-                 {{EffectType::Block, 6}, {EffectType::Weak, 1}}),
-        makeCard("focus", "聚能", 0, CardType::Skill, "普通", "获得 1 能量\n抽 1 张牌", 
+        makeCard("focus", "聚能", 0, CardType::Skill, "普通", "获得 1 能量\n抽 1 张牌",
                  {{EffectType::GainEnergy, 1}, {EffectType::Draw, 1}}, true),
-        makeCard("cleave", "横扫", 2, CardType::Attack, "普通", "造成 16 伤害",
-                 {{EffectType::Damage, 16}}),
-        makeCard("first_aid", "急救", 1, CardType::Skill, "普通", "回复 6 生命\n消耗",
-                 {{EffectType::Heal, 6}}, true),
         makeCard("echo_blade", "回声剑", 2, CardType::Attack, "稀有", "造成 8 伤害\n抽 2 张牌",
                  {{EffectType::Damage, 8}, {EffectType::Draw, 2}}),
-        makeCard("fortify", "堡垒姿态", 2, CardType::Skill, "稀有", "获得 16 格挡",
-                 {{EffectType::Block, 16}}),
-        makeCard("storm", "风暴术", 2, CardType::Attack, "稀有", "造成 10 伤害\n施加 2 虚弱",
-                 {{EffectType::Damage, 10}, {EffectType::Weak, 2}}),
-        makeCard("ritual", "赤心仪式", 1, CardType::Power, "稀有", "力量 +1\n每回合力量 +1",
-                 {{EffectType::Strength, 1}, {EffectType::Ritual, 1}}),
         makeCard("meditate", "冥想", 1, CardType::Skill, "稀有", "抽 3 张牌",
                  {{EffectType::Draw, 3}}),
-        makeCard("finisher", "终结", 3, CardType::Attack, "稀有", "造成 28 伤害",
-                 {{EffectType::Damage, 28}}),
-        makeCard("pulse_guard", "脉冲护盾", 2, CardType::Skill, "稀有", "获得 12 格挡\n抽 1 张牌",
-                 {{EffectType::Block, 12}, {EffectType::Draw, 1}}),
-        makeCard("ignite", "点燃", 1, CardType::Attack, "普通", "造成 7 伤害\n力量 +1",
-                 {{EffectType::Damage, 7}, {EffectType::Strength, 1}}),
-        makeCard("cleanse", "净化", 1, CardType::Skill, "普通", "回复 4 生命\n抽 1 张牌",
-                 {{EffectType::Heal, 4}, {EffectType::Draw, 1}}),
-        makeCard("overrun", "压制", 2, CardType::Attack, "普通", "造成 14 伤害\n施加 1 易伤",
-                 {{EffectType::Damage, 14}, {EffectType::Vulnerable, 1}}),
         makeCard("moon_cut", "月弧斩", 1, CardType::Attack, "普通", "造成 8 伤害\n获得 4 格挡",
                  {{EffectType::Damage, 8}, {EffectType::Block, 4}}),
-        makeCard("chain_guard", "锁链防御", 1, CardType::Skill, "普通", "获得 7 格挡\n施加 1 虚弱",
-                 {{EffectType::Block, 7}, {EffectType::Weak, 1}}),
         makeCard("quick_step", "疾步", 0, CardType::Skill, "普通", "抽 2 张牌\n消耗",
                  {{EffectType::Draw, 2}}, true),
-        makeCard("heavy_lance", "重枪突刺", 2, CardType::Attack, "普通", "造成 18 伤害\n施加 1 易伤",
-                 {{EffectType::Damage, 18}, {EffectType::Vulnerable, 1}}),
-        makeCard("iron_skin", "铁肤", 2, CardType::Skill, "普通", "获得 14 格挡\n力量 +1",
-                 {{EffectType::Block, 14}, {EffectType::Strength, 1}}),
-        makeCard("blood_pact", "血契", 1, CardType::Power, "稀有", "力量 +3\n回复 3 生命",
-                 {{EffectType::Strength, 3}, {EffectType::Heal, 3}}),
-        makeCard("starfall", "星坠", 3, CardType::Attack, "稀有", "造成 20 伤害\n施加 2 易伤",
-                 {{EffectType::Damage, 20}, {EffectType::Vulnerable, 2}}),
-        makeCard("aegis_bloom", "盾花绽放", 2, CardType::Skill, "稀有", "获得 10 格挡\n回复 8 生命",
-                 {{EffectType::Block, 10}, {EffectType::Heal, 8}}),
         makeCard("clockwork", "发条连携", 1, CardType::Skill, "稀有", "获得 1 能量\n抽 2 张牌\n消耗",
                  {{EffectType::GainEnergy, 1}, {EffectType::Draw, 2}}, true),
-        makeCard("sun_spear", "日冕枪", 2, CardType::Attack, "稀有", "造成 12 伤害\n力量 +2",
-                 {{EffectType::Damage, 12}, {EffectType::Strength, 2}}),
         makeCard("void_mark", "虚空印记", 1, CardType::Attack, "普通", "造成 5 伤害\n施加 2 虚弱",
                  {{EffectType::Damage, 5}, {EffectType::Weak, 2}}),
-        makeCard("deep_breath", "深呼吸", 0, CardType::Skill, "普通", "回复 3 生命\n获得 3 格挡",
-                 {{EffectType::Heal, 3}, {EffectType::Block, 3}}),
     };
+}
+
+std::vector<Card> cardPool()
+{
+    return cardPool(CharacterId::RiftTraveler);
+}
+
+std::vector<CharacterDefinition> characterDefinitions()
+{
+    return {
+        {CharacterId::RiftTraveler,
+         "裂隙旅人",
+         "抽牌 / 节奏",
+         "额外抽牌与临时能量。\n寻找爆发回合。",
+         "sprite_player_rift",
+         72,
+         3,
+         99,
+         starterDeck(CharacterId::RiftTraveler),
+         cardPool(CharacterId::RiftTraveler),
+         {"裂纹罗盘"}},
+        {CharacterId::EmberAdept,
+         "余烬使徒",
+         "力量 / 易伤",
+         "生命较低。\n快速叠力量并放大伤害。",
+         "sprite_player_ember",
+         64,
+         3,
+         99,
+         starterDeck(CharacterId::EmberAdept),
+         cardPool(CharacterId::EmberAdept),
+         {"余烬血脉"}},
+        {CharacterId::CrystalWarden,
+         "晶盾守卫",
+         "格挡 / 回复",
+         "生命更高。\n用格挡、回复和虚弱拖住战斗。",
+         "sprite_player_crystal",
+         82,
+         3,
+         85,
+         starterDeck(CharacterId::CrystalWarden),
+         cardPool(CharacterId::CrystalWarden),
+         {"晶盾核心"}},
+    };
+}
+
+const CharacterDefinition& characterDefinition(CharacterId id)
+{
+    static const std::vector<CharacterDefinition> definitions = characterDefinitions();
+    const auto found = std::find_if(definitions.begin(), definitions.end(), [id](const CharacterDefinition& definition) {
+        return definition.id == id;
+    });
+    return found == definitions.end() ? definitions.front() : *found;
+}
+
+bool isCardInCharacterPool(CharacterId character, const std::string& cardId)
+{
+    const std::vector<Card> pool = cardPool(character);
+    return std::any_of(pool.begin(), pool.end(), [&cardId](const Card& card) {
+        return card.id == cardId;
+    });
 }
 
 std::vector<Potion> potionPool()

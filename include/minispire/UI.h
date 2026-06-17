@@ -18,6 +18,9 @@ sf::Color panelColor();
 sf::Color accentColor();
 sf::Color cardColor(CardType type);
 
+void setTextRenderScale(float scale);
+float textRenderScale();
+
 sf::Text makeText(const ResourceManager& resources,
                   const std::string& utf8,
                   unsigned int size,
@@ -76,6 +79,7 @@ void drawCreaturePanel(sf::RenderWindow& window,
 
 void drawPlayerSprite(sf::RenderWindow& window,
                       const ResourceManager& resources,
+                      CharacterId character,
                       sf::Vector2f center,
                       float scale);
 

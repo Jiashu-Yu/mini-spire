@@ -21,3 +21,8 @@ Win32/
 *.dll
 *.lib
 *.log
+assets/images/source/
+mini_spire_save.txt
+mini_spire_history.txt
+mini_spire_test_save.txt
+mini_spire_test_history.txt

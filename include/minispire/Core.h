@@ -60,6 +60,12 @@ enum class NodeType {
     Event
 };
 
+enum class CharacterId {
+    RiftTraveler,
+    EmberAdept,
+    CrystalWarden
+};
+
 struct Effect {
     EffectType type {};
     int amount {};
@@ -81,6 +87,20 @@ struct Potion {
     std::string name;
     std::string description;
     std::vector<Effect> effects;
+};
+
+struct CharacterDefinition {
+    CharacterId id {};
+    std::string name;
+    std::string subtitle;
+    std::string description;
+    std::string spriteKey;
+    int maxHp {72};
+    int maxEnergy {3};
+    int startingGold {99};
+    std::vector<Card> startingDeck;
+    std::vector<Card> cardPool;
+    std::vector<std::string> startingRelics;
 };
 
 struct CombatEvent {
@@ -109,6 +129,7 @@ public:
     int receiveDamage(int amount);
     void heal(int amount);
     void clearBlock();
+    void clearStatuses();
     void setHp(int hp);
     void setMaxHp(int maxHp);
 
@@ -123,6 +144,7 @@ private:
 class Player : public Creature {
 public:
     Player();
+    Player(std::string name, int maxHp, int maxEnergy, int gold);
 
     int energy() const;
     int maxEnergy() const;
@@ -139,7 +161,9 @@ public:
     bool addPotion(Potion potion);
     std::optional<Potion> takePotion(std::size_t slot);
     bool discardPotion(std::size_t slot);
+    void setPotion(std::size_t slot, std::optional<Potion> potion);
     void setGold(int gold);
+    void setMaxEnergy(int maxEnergy);
 
 private:
     int maxEnergy_ {3};
@@ -180,6 +204,8 @@ private:
 
 class Deck {
 public:
+    static constexpr std::size_t MaxHandSize = 10;
+
     void reset(std::vector<Card> cards, std::mt19937& rng);
     void drawCards(int count, std::mt19937& rng);
     bool hasPlayableCard(int energy) const;
@@ -268,14 +294,33 @@ struct MapNode {
     bool completed {false};
 };
 
+struct RunHistoryEntry {
+    bool won {false};
+    int level {1};
+    int maxLevels {3};
+    int steps {0};
+    int deckSize {0};
+    int hp {0};
+    int maxHp {0};
+};
+
+struct RunHistorySummary {
+    int totalRuns {0};
+    int wins {0};
+    std::vector<RunHistoryEntry> recent;
+};
+
 class RunController {
 public:
     RunController();
 
     void startNewRun(std::uint32_t seed = std::random_device{}());
+    void startNewRun(CharacterId character, std::uint32_t seed = std::random_device{}());
     bool active() const;
     bool won() const;
     void setWon(bool won);
+    CharacterId characterId() const;
+    const CharacterDefinition& character() const;
 
     const Player& player() const;
     Player& player();
@@ -303,11 +348,20 @@ public:
     Card makeRandomReward();
     Potion makeRandomPotion();
     void addCardToDeck(const Card& card);
+    PlayResult removeCardFromDeck(std::size_t index, int cost);
     void syncPlayerAfterCombat(const Player& player);
     void startNextLevel();
+    void recoverAfterBoss();
     void rest();
     void eventGainGold();
     void eventHeal();
+    bool saveToFile(const std::string& path = "mini_spire_save.txt") const;
+    bool loadFromFile(const std::string& path = "mini_spire_save.txt");
+    bool deleteSaveFile(const std::string& path = "mini_spire_save.txt") const;
+    void recordRunResult(bool won, const std::string& historyPath = "mini_spire_history.txt");
+
+    static bool hasSaveFile(const std::string& path = "mini_spire_save.txt");
+    static RunHistorySummary loadHistory(const std::string& path = "mini_spire_history.txt");
 
 private:
     void generateMap();
@@ -322,6 +376,8 @@ private:
     int maxLevels_ {3};
     bool active_ {false};
     bool won_ {false};
+    bool resultRecorded_ {false};
+    CharacterId characterId_ {CharacterId::RiftTraveler};
     std::mt19937 rng_;
 };
 
@@ -329,8 +385,13 @@ std::string toString(CardType type);
 std::string toString(NodeType type);
 std::string toString(StatusType type);
 
+std::vector<CharacterDefinition> characterDefinitions();
+const CharacterDefinition& characterDefinition(CharacterId id);
+bool isCardInCharacterPool(CharacterId character, const std::string& cardId);
 std::vector<Card> starterDeck();
+std::vector<Card> starterDeck(CharacterId character);
 std::vector<Card> cardPool();
+std::vector<Card> cardPool(CharacterId character);
 std::vector<Potion> potionPool();
 Enemy makeEnemy(EnemyKind kind, int progress);
 

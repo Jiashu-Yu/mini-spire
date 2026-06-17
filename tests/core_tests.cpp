@@ -1,12 +1,22 @@
-#include "minispire/Core.h"
+﻿#include "minispire/Core.h"
+#include "minispire/Layout.h"
 
-#include <cassert>
+#include <algorithm>
 #include <iostream>
+#include <set>
+#include <stdexcept>
 #include <utility>
 
 using namespace minispire;
 
 namespace {
+
+void require(bool condition)
+{
+    if (!condition) {
+        throw std::runtime_error("Mini Spire core test assertion failed");
+    }
+}
 
 Card makeTestCard(std::string id, int cost, std::vector<Effect> effects)
 {
@@ -20,10 +30,10 @@ void testCombatStartsWithHandAndEnergy()
     CombatState combat(player, enemy, starterDeck(), 1234);
     combat.start();
 
-    assert(combat.isPlayerTurn());
-    assert(combat.turn() == 1);
-    assert(combat.player().energy() == 3);
-    assert(combat.deck().hand().size() == 5);
+    require(combat.isPlayerTurn());
+    require(combat.turn() == 1);
+    require(combat.player().energy() == 3);
+    require(combat.deck().hand().size() == 5);
 }
 
 void testCardSpendsEnergyAndDealsDamage()
@@ -43,9 +53,9 @@ void testCardSpendsEnergyAndDealsDamage()
     const int beforeHp = combat.enemy().hp();
     const PlayResult result = combat.playCard(0);
 
-    assert(result.accepted);
-    assert(combat.player().energy() == 2);
-    assert(combat.enemy().hp() < beforeHp);
+    require(result.accepted);
+    require(combat.player().energy() == 2);
+    require(combat.enemy().hp() < beforeHp);
 }
 
 void testBlockPreventsEnemyDamage()
@@ -66,56 +76,56 @@ void testBlockPreventsEnemyDamage()
     const int hpBefore = combat.player().hp();
     combat.endPlayerTurn();
 
-    assert(combat.player().hp() == hpBefore);
+    require(combat.player().hp() == hpBefore);
 }
 
 void testRunMapUnlocksNextNodes()
 {
     RunController run;
     run.startNewRun(42);
-    assert(run.level() == 1);
-    assert(run.availableNodeIds().size() == 2);
+    require(run.level() == 1);
+    require(run.availableNodeIds().size() == 2);
     const int first = run.availableNodeIds().front();
-    assert(run.selectNode(first));
+    require(run.selectNode(first));
     run.completeActiveNode();
-    assert(!run.availableNodeIds().empty());
-    assert(run.steps() == 1);
+    require(!run.availableNodeIds().empty());
+    require(run.steps() == 1);
 }
 
 void testRunAdvancesAcrossThreeLevels()
 {
     RunController run;
     run.startNewRun(42);
-    assert(run.levelName() == "第一层：灰烬地牢");
+    require(run.levelName() == "第一层：灰烬地牢");
 
     run.startNextLevel();
-    assert(run.level() == 2);
-    assert(!run.finalLevel());
-    assert(run.availableNodeIds().size() == 3);
+    require(run.level() == 2);
+    require(!run.finalLevel());
+    require(run.availableNodeIds().size() == 3);
 
     run.startNextLevel();
-    assert(run.level() == 3);
-    assert(run.finalLevel());
-    assert(run.availableNodeIds().size() == 3);
+    require(run.level() == 3);
+    require(run.finalLevel());
+    require(run.availableNodeIds().size() == 3);
 }
 
 void testPotionSlotsUseAndDiscard()
 {
     Player player;
-    assert(player.addPotion(Potion {"fire", "火焰药水", "造成伤害", {{EffectType::Damage, 20}}}));
-    assert(player.addPotion(Potion {"guard", "钢肤药水", "获得格挡", {{EffectType::Block, 14}}}));
-    assert(!player.addPotion(Potion {"extra", "额外药水", "槽位已满", {{EffectType::Heal, 1}}}));
+    require(player.addPotion(Potion {"fire", "火焰药水", "造成伤害", {{EffectType::Damage, 20}}}));
+    require(player.addPotion(Potion {"guard", "钢肤药水", "获得格挡", {{EffectType::Block, 14}}}));
+    require(!player.addPotion(Potion {"extra", "额外药水", "槽位已满", {{EffectType::Heal, 1}}}));
 
     Enemy enemy = makeEnemy(EnemyKind::AshCultist, 0);
     CombatState combat(player, enemy, starterDeck(), 11);
     combat.start();
     const int beforeHp = combat.enemy().hp();
-    assert(combat.usePotion(0).accepted);
-    assert(combat.enemy().hp() < beforeHp);
-    assert(!combat.player().potions().at(0).has_value());
+    require(combat.usePotion(0).accepted);
+    require(combat.enemy().hp() < beforeHp);
+    require(!combat.player().potions().at(0).has_value());
 
-    assert(combat.discardPotion(1).accepted);
-    assert(!combat.player().potions().at(1).has_value());
+    require(combat.discardPotion(1).accepted);
+    require(!combat.player().potions().at(1).has_value());
 }
 
 void testRelicAppliesAtCombatStart()
@@ -126,7 +136,7 @@ void testRelicAppliesAtCombatStart()
     CombatState combat(player, enemy, starterDeck(), 17);
     combat.start();
 
-    assert(combat.player().status(StatusType::Strength) >= 1);
+    require(combat.player().status(StatusType::Strength) >= 1);
 }
 
 void testRewardsComeFromPool()
@@ -134,11 +144,207 @@ void testRewardsComeFromPool()
     RunController run;
     run.startNewRun(99);
     const std::vector<Card> rewards = run.makeRewards(3);
-    assert(rewards.size() == 3);
+    require(rewards.size() == 3);
     for (const Card& card : rewards) {
-        assert(!card.id.empty());
-        assert(!card.effects.empty());
+        require(!card.id.empty());
+        require(!card.effects.empty());
     }
+}
+
+void testHandLimitDiscardsOverflow()
+{
+    std::mt19937 rng(123);
+    std::vector<Card> cards;
+    for (int i = 0; i < 14; ++i) {
+        cards.push_back(makeTestCard("overflow_" + std::to_string(i), 0, {{EffectType::Draw, 1}}));
+    }
+
+    Deck deck;
+    deck.reset(cards, rng);
+    deck.drawCards(12, rng);
+
+    require(deck.hand().size() == Deck::MaxHandSize);
+    require(deck.discardCount() == 2);
+    require(deck.totalCount() == 14);
+}
+
+void testLevelTransitionClearsStatuses()
+{
+    RunController run;
+    run.startNewRun(42);
+    run.player().addStatus(StatusType::Strength, 3);
+    run.player().addStatus(StatusType::Weak, 2);
+
+    run.startNextLevel();
+
+    require(run.player().status(StatusType::Strength) == 0);
+    require(run.player().status(StatusType::Weak) == 0);
+}
+
+void testBossRecoveryFillsHealthAndClearsBlock()
+{
+    RunController run;
+    run.startNewRun(42);
+    run.player().receiveDamage(40);
+    run.player().gainBlock(12);
+
+    run.recoverAfterBoss();
+
+    require(run.player().hp() == run.player().maxHp());
+    require(run.player().block() == 0);
+}
+
+void testCombatLayoutKeepsPanelsSeparated()
+{
+    const layout::CombatLayout combatLayout = layout::combatLayout();
+    const layout::CreaturePanelRows rows = layout::creaturePanelRows(combatLayout.playerCreaturePanel);
+    const layout::CreaturePanelRows enemyRows = layout::creaturePanelRows(combatLayout.enemyCreaturePanel);
+    const layout::Rect playerSprite = layout::spriteBounds(combatLayout.playerSpriteCenter,
+                                                           {196.0F * combatLayout.playerSpriteScale,
+                                                            238.0F * combatLayout.playerSpriteScale},
+                                                           18.0F * combatLayout.playerSpriteScale);
+    const layout::Rect deckInfo = combatLayout.deckInfoPanel;
+    const layout::Rect secondPotionSlot = layout::combatPotionSlotRect(1);
+    const layout::Rect firstCard = layout::combatHandCardRect(0, 10);
+
+    require(playerSprite.top + playerSprite.height + 6.0F <= combatLayout.playerPanel.top);
+    require(rows.statusTop >= rows.subtitleTop + 22.0F);
+    require(rows.hpBarTop >= rows.statusTop + 26.0F);
+    require(deckInfo.top >= secondPotionSlot.top + secondPotionSlot.height + 8.0F);
+    require(deckInfo.left + deckInfo.width + 20.0F <= firstCard.left);
+    require(combatLayout.deckTextPosition.x >= deckInfo.left + 12.0F);
+    require(combatLayout.deckTextPosition.y >= deckInfo.top + 10.0F);
+    require(enemyRows.statusTop >= enemyRows.subtitleTop + 22.0F);
+    require(enemyRows.hpBarTop >= enemyRows.statusTop + 26.0F);
+    require(secondPotionSlot.top >= combatLayout.potionLabelPosition.y + 20.0F);
+    require(secondPotionSlot.top + secondPotionSlot.height + 8.0F <= firstCard.top);
+    require(combatLayout.enemyPanel.top + combatLayout.enemyPanel.height + 16.0F <= combatLayout.enemySpriteCenter.y);
+    require(combatLayout.endTurnButton.top > combatLayout.enemyPanel.top + combatLayout.enemyPanel.height);
+}
+
+void testWindowRenderScaleMatchesLetterboxedContent()
+{
+    require(layout::renderScaleForWindow(1280U, 720U) == 1.0F);
+    require(layout::renderScaleForWindow(1920U, 1080U) == 1.5F);
+    const float fourByThreeScale = layout::renderScaleForWindow(2048U, 1536U);
+    require(fourByThreeScale > 1.59F && fourByThreeScale < 1.61F);
+}
+
+void testCharacterChoicesUseDifferentCardPools()
+{
+    const std::vector<CharacterDefinition> definitions = characterDefinitions();
+    require(definitions.size() == 3);
+    std::set<std::string> spriteKeys;
+    for (const CharacterDefinition& definition : definitions) {
+        require(!definition.spriteKey.empty());
+        spriteKeys.insert(definition.spriteKey);
+    }
+    require(spriteKeys.size() == definitions.size());
+
+    RunController rift;
+    rift.startNewRun(CharacterId::RiftTraveler, 11);
+    RunController ember;
+    ember.startNewRun(CharacterId::EmberAdept, 11);
+    RunController crystal;
+    crystal.startNewRun(CharacterId::CrystalWarden, 11);
+
+    require(rift.characterId() == CharacterId::RiftTraveler);
+    require(ember.characterId() == CharacterId::EmberAdept);
+    require(crystal.characterId() == CharacterId::CrystalWarden);
+    require(rift.player().name() != ember.player().name());
+    require(ember.player().maxHp() < crystal.player().maxHp());
+    require(!ember.player().relics().empty());
+    require(!crystal.player().relics().empty());
+    require(ember.deck().front().id != crystal.deck().front().id);
+
+    const Card emberReward = ember.makeRandomReward();
+    const Card crystalReward = crystal.makeRandomReward();
+    require(isCardInCharacterPool(CharacterId::EmberAdept, emberReward.id));
+    require(isCardInCharacterPool(CharacterId::CrystalWarden, crystalReward.id));
+}
+
+void testShopRemovalRemovesCardAndChargesGold()
+{
+    RunController run;
+    run.startNewRun(CharacterId::RiftTraveler, 42);
+    const std::size_t beforeDeck = run.deck().size();
+    const int beforeGold = run.player().gold();
+
+    const PlayResult removed = run.removeCardFromDeck(0, 75);
+    require(removed.accepted);
+    require(run.deck().size() == beforeDeck - 1);
+    require(run.player().gold() == beforeGold - 75);
+
+    const std::size_t afterDeck = run.deck().size();
+    const int afterGold = run.player().gold();
+    const PlayResult invalid = run.removeCardFromDeck(999, 75);
+    require(!invalid.accepted);
+    require(run.deck().size() == afterDeck);
+    require(run.player().gold() == afterGold);
+}
+
+void testRemovedCardPersistsAcrossSaveLoad()
+{
+    const std::string savePath = "mini_spire_removed_card_save.txt";
+
+    RunController cleanup;
+    cleanup.deleteSaveFile(savePath);
+
+    RunController run;
+    run.startNewRun(CharacterId::RiftTraveler, 12);
+    const Card uniqueCard = cardPool(CharacterId::RiftTraveler).front();
+    run.addCardToDeck(uniqueCard);
+    const PlayResult removed = run.removeCardFromDeck(run.deck().size() - 1, 75);
+    require(removed.accepted);
+    require(std::none_of(run.deck().begin(), run.deck().end(), [&uniqueCard](const Card& card) {
+        return card.id == uniqueCard.id;
+    }));
+    const std::size_t deckSizeAfterRemoval = run.deck().size();
+    require(run.saveToFile(savePath));
+
+    RunController loaded;
+    require(loaded.loadFromFile(savePath));
+    require(loaded.deck().size() == deckSizeAfterRemoval);
+    require(std::none_of(loaded.deck().begin(), loaded.deck().end(), [&uniqueCard](const Card& card) {
+        return card.id == uniqueCard.id;
+    }));
+
+    cleanup.deleteSaveFile(savePath);
+}
+
+void testSaveLoadAndHistory()
+{
+    const std::string savePath = "mini_spire_test_save.txt";
+    const std::string historyPath = "mini_spire_test_history.txt";
+
+    RunController cleanup;
+    cleanup.deleteSaveFile(savePath);
+    cleanup.deleteSaveFile(historyPath);
+
+    RunController run;
+    run.startNewRun(CharacterId::CrystalWarden, 77);
+    run.player().setGold(321);
+    run.player().addPotion(Potion {"fire_potion", "火焰药水", "造成伤害", {{EffectType::Damage, 20}}});
+    run.addCardToDeck(cardPool().front());
+    require(run.saveToFile(savePath));
+    require(RunController::hasSaveFile(savePath));
+
+    RunController loaded;
+    require(loaded.loadFromFile(savePath));
+    require(loaded.characterId() == CharacterId::CrystalWarden);
+    require(loaded.player().gold() == 321);
+    require(loaded.deck().size() == run.deck().size());
+    require(loaded.player().potions().at(0).has_value());
+
+    loaded.recordRunResult(true, historyPath);
+    const RunHistorySummary history = RunController::loadHistory(historyPath);
+    require(history.totalRuns == 1);
+    require(history.wins == 1);
+    require(history.recent.size() == 1);
+    require(history.recent.front().won);
+
+    cleanup.deleteSaveFile(savePath);
+    cleanup.deleteSaveFile(historyPath);
 }
 
 } // namespace
@@ -153,6 +359,15 @@ int main()
     testPotionSlotsUseAndDiscard();
     testRelicAppliesAtCombatStart();
     testRewardsComeFromPool();
+    testHandLimitDiscardsOverflow();
+    testLevelTransitionClearsStatuses();
+    testBossRecoveryFillsHealthAndClearsBlock();
+    testCombatLayoutKeepsPanelsSeparated();
+    testWindowRenderScaleMatchesLetterboxedContent();
+    testCharacterChoicesUseDifferentCardPools();
+    testShopRemovalRemovesCardAndChargesGold();
+    testRemovedCardPersistsAcrossSaveLoad();
+    testSaveLoadAndHistory();
 
     std::cout << "All Mini Spire core tests passed.\n";
     return 0;

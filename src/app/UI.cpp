@@ -1,5 +1,7 @@
 #include "minispire/UI.h"
 
+#include "minispire/Layout.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -9,6 +11,8 @@
 
 namespace minispire::ui {
 namespace {
+
+float gTextRenderScale = 1.0F;
 
 sf::String utf8String(const std::string& text)
 {
@@ -93,6 +97,68 @@ void drawTriangle(sf::RenderWindow& window, sf::Vector2f a, sf::Vector2f b, sf::
     window.draw(triangle);
 }
 
+void drawTextureFit(sf::RenderWindow& window, const sf::Texture& texture, sf::Vector2f center, sf::Vector2f maxSize)
+{
+    const sf::Vector2u size = texture.getSize();
+    if (size.x == 0 || size.y == 0) {
+        return;
+    }
+
+    sf::Sprite sprite(texture);
+    sprite.setOrigin(static_cast<float>(size.x) / 2.0F, static_cast<float>(size.y) / 2.0F);
+    const float scale = std::min(maxSize.x / static_cast<float>(size.x), maxSize.y / static_cast<float>(size.y));
+    sprite.setScale(scale, scale);
+    sprite.setPosition(center);
+    window.draw(sprite);
+}
+
+void drawSpriteShadow(sf::RenderWindow& window, sf::Vector2f center, float width, float height)
+{
+    sf::CircleShape shadow(width / 2.0F);
+    shadow.setOrigin(width / 2.0F, width / 2.0F);
+    shadow.setPosition(center);
+    shadow.setScale(1.0F, height / std::max(1.0F, width));
+    shadow.setFillColor(sf::Color(0, 0, 0, 85));
+    window.draw(shadow);
+}
+
+std::string textureKeyForEnemy(EnemyKind kind)
+{
+    switch (kind) {
+    case EnemyKind::AshCultist:
+        return "enemy_ash_cultist";
+    case EnemyKind::AcidSlime:
+        return "enemy_acid_slime";
+    case EnemyKind::BellGuard:
+        return "enemy_bell_guard";
+    case EnemyKind::ThornLurker:
+        return "enemy_thorn_lurker";
+    case EnemyKind::CrystalWisp:
+        return "enemy_crystal_wisp";
+    case EnemyKind::EmberDuelist:
+        return "enemy_ember_duelist";
+    case EnemyKind::NullPriest:
+        return "enemy_null_priest";
+    case EnemyKind::ChronoKnight:
+        return "enemy_chrono_knight";
+    case EnemyKind::IronSentinel:
+        return "enemy_iron_sentinel";
+    case EnemyKind::RootMatriarch:
+        return "boss_root_matriarch";
+    case EnemyKind::ClockworkDragon:
+        return "boss_clockwork_dragon";
+    case EnemyKind::SpireArchitect:
+        return "boss_spire_architect";
+    }
+    return "";
+}
+
+std::string textureKeyForCharacter(CharacterId character)
+{
+    const std::string& key = characterDefinition(character).spriteKey;
+    return key.empty() ? "sprite_player" : key;
+}
+
 } // namespace
 
 sf::Color backgroundColor()
@@ -123,12 +189,25 @@ sf::Color cardColor(CardType type)
     return sf::Color(72, 72, 80);
 }
 
+void setTextRenderScale(float scale)
+{
+    gTextRenderScale = std::clamp(scale, 0.5F, 4.0F);
+}
+
+float textRenderScale()
+{
+    return gTextRenderScale;
+}
+
 sf::Text makeText(const ResourceManager& resources, const std::string& utf8, unsigned int size, sf::Color color)
 {
     sf::Text text;
     text.setFont(resources.font());
     text.setString(utf8String(utf8));
-    text.setCharacterSize(size);
+    const unsigned int physicalSize = std::max(1U, static_cast<unsigned int>(std::lround(static_cast<float>(size) * textRenderScale())));
+    text.setCharacterSize(physicalSize);
+    const float logicalScale = static_cast<float>(size) / static_cast<float>(physicalSize);
+    text.setScale(logicalScale, logicalScale);
     text.setFillColor(color);
     return text;
 }
@@ -280,19 +359,31 @@ void drawCreaturePanel(sf::RenderWindow& window,
                        const std::string& subtitle)
 {
     drawPanel(window, rect, sf::Color(41, 43, 58), sf::Color(103, 111, 136), 1.0F);
-    drawText(window, resources, creature.name(), {rect.left + 16.0F, rect.top + 12.0F}, 24, sf::Color::White);
-    drawText(window, resources, subtitle, {rect.left + 16.0F, rect.top + 42.0F}, 15, sf::Color(214, 209, 190));
+    const layout::CreaturePanelRows rows = layout::creaturePanelRows({rect.left, rect.top, rect.width, rect.height});
+    drawText(window, resources, creature.name(), {rect.left + 16.0F, rows.titleTop}, 24, sf::Color::White);
+    drawText(window, resources, subtitle, {rect.left + 16.0F, rows.subtitleTop}, 15, sf::Color(214, 209, 190));
     const float hpFraction = static_cast<float>(creature.hp()) / static_cast<float>(std::max(1, creature.maxHp()));
-    drawBar(window, {rect.left + 16.0F, rect.top + rect.height - 42.0F, rect.width - 32.0F, 18.0F}, hpFraction, sf::Color(185, 58, 67));
-    drawText(window, resources, std::to_string(creature.hp()) + "/" + std::to_string(creature.maxHp()), {rect.left + 24.0F, rect.top + rect.height - 44.0F}, 14);
+    drawBar(window, {rect.left + 16.0F, rows.hpBarTop, rect.width - 32.0F, 18.0F}, hpFraction, sf::Color(185, 58, 67));
+    drawText(window, resources, std::to_string(creature.hp()) + "/" + std::to_string(creature.maxHp()), {rect.left + 24.0F, rows.hpTextTop}, 14);
     if (creature.block() > 0) {
-        drawText(window, resources, "格挡 " + std::to_string(creature.block()), {rect.left + rect.width - 86.0F, rect.top + rect.height - 68.0F}, 15, sf::Color(159, 210, 255));
+        drawText(window, resources, "格挡 " + std::to_string(creature.block()), {rect.left + rect.width - 86.0F, rows.blockTop}, 14, sf::Color(159, 210, 255));
     }
-    drawStatusLine(window, resources, creature, {rect.left + 16.0F, rect.top + rect.height - 68.0F});
+    drawStatusLine(window, resources, creature, {rect.left + 16.0F, rows.statusTop});
 }
 
-void drawPlayerSprite(sf::RenderWindow& window, const ResourceManager& resources, sf::Vector2f center, float scale)
+void drawPlayerSprite(sf::RenderWindow& window, const ResourceManager& resources, CharacterId character, sf::Vector2f center, float scale)
 {
+    if (const sf::Texture* texture = resources.texture(textureKeyForCharacter(character))) {
+        drawSpriteShadow(window, {center.x, center.y + 92.0F * scale}, 138.0F * scale, 34.0F * scale);
+        drawTextureFit(window, *texture, {center.x, center.y + 18.0F * scale}, {196.0F * scale, 238.0F * scale});
+        return;
+    }
+    if (const sf::Texture* texture = resources.texture("sprite_player")) {
+        drawSpriteShadow(window, {center.x, center.y + 92.0F * scale}, 138.0F * scale, 34.0F * scale);
+        drawTextureFit(window, *texture, {center.x, center.y + 18.0F * scale}, {196.0F * scale, 238.0F * scale});
+        return;
+    }
+
     sf::CircleShape aura(78.0F * scale);
     aura.setOrigin(78.0F * scale, 78.0F * scale);
     aura.setPosition(center.x, center.y + 8.0F * scale);
@@ -335,6 +426,15 @@ void drawPlayerSprite(sf::RenderWindow& window, const ResourceManager& resources
 
 void drawEnemySprite(sf::RenderWindow& window, const ResourceManager& resources, EnemyKind kind, sf::Vector2f center, float scale)
 {
+    if (const sf::Texture* texture = resources.texture(textureKeyForEnemy(kind))) {
+        const bool boss = kind == EnemyKind::RootMatriarch || kind == EnemyKind::ClockworkDragon || kind == EnemyKind::SpireArchitect;
+        const sf::Vector2f maxSize = boss ? sf::Vector2f(330.0F * scale, 270.0F * scale)
+                                          : sf::Vector2f(245.0F * scale, 215.0F * scale);
+        drawSpriteShadow(window, {center.x, center.y + maxSize.y * 0.35F}, maxSize.x * 0.72F, 42.0F * scale);
+        drawTextureFit(window, *texture, {center.x, center.y - 2.0F * scale}, maxSize);
+        return;
+    }
+
     sf::Color body = sf::Color(102, 58, 70);
     sf::Color outline = sf::Color(218, 153, 94);
     std::string glyph = "敌";

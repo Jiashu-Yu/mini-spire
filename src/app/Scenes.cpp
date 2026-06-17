@@ -1,4 +1,5 @@
 #include "minispire/GameApp.h"
+#include "minispire/Layout.h"
 
 #include "minispire/Scene.h"
 #include "minispire/UI.h"
@@ -22,14 +23,19 @@ sf::Vector2f mousePoint(const sf::Event& event, const sf::RenderWindow& window)
     return window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
 }
 
+sf::FloatRect toSf(layout::Rect rect)
+{
+    return {rect.left, rect.top, rect.width, rect.height};
+}
+
+sf::Vector2f toSf(layout::Vec2 point)
+{
+    return {point.x, point.y};
+}
+
 sf::FloatRect handCardRect(std::size_t index, std::size_t count)
 {
-    constexpr float width = 132.0F;
-    constexpr float height = 186.0F;
-    const float step = count <= 1 ? 0.0F : std::min(146.0F, (1180.0F - width) / static_cast<float>(count - 1));
-    const float total = count <= 1 ? width : width + step * static_cast<float>(count - 1);
-    const float start = (ui::WindowWidth - total) / 2.0F;
-    return {start + static_cast<float>(index) * step, 512.0F, width, height};
+    return toSf(layout::combatHandCardRect(index, count));
 }
 
 sf::FloatRect rewardCardRect(std::size_t index)
@@ -39,7 +45,7 @@ sf::FloatRect rewardCardRect(std::size_t index)
 
 sf::FloatRect combatPotionSlotRect(std::size_t index)
 {
-    return {70.0F + static_cast<float>(index) * 152.0F, 462.0F, 138.0F, 34.0F};
+    return toSf(layout::combatPotionSlotRect(index));
 }
 
 std::uint32_t randomSeed()
@@ -244,47 +250,111 @@ void drawVisualEffect(sf::RenderWindow& window, const ResourceManager& resources
 
     switch (effect.kind) {
     case VisualEffectKind::Slash: {
-        sf::RectangleShape slash({132.0F * (1.0F + t), 9.0F});
-        slash.setOrigin(66.0F * (1.0F + t), 4.5F);
-        slash.setPosition(pos);
-        slash.setRotation(-24.0F);
-        slash.setFillColor(color);
-        window.draw(slash);
+        const float dx = effect.end.x - effect.start.x;
+        const float dy = effect.end.y - effect.start.y;
+        const float distance = std::sqrt(dx * dx + dy * dy);
+        const float angle = std::atan2(dy, dx) * 57.29578F;
+
+        sf::Color trailColor = color;
+        trailColor.a = static_cast<sf::Uint8>(std::max(0.0F, 120.0F * (1.0F - t)));
+        sf::RectangleShape trail({std::max(20.0F, distance * k), 5.0F});
+        trail.setOrigin(0.0F, 2.5F);
+        trail.setPosition(effect.start);
+        trail.setRotation(angle);
+        trail.setFillColor(trailColor);
+        window.draw(trail);
+
+        for (int i = 0; i < 3; ++i) {
+            sf::RectangleShape slash({122.0F - static_cast<float>(i) * 24.0F, 8.0F});
+            slash.setOrigin(slash.getSize().x / 2.0F, 4.0F);
+            slash.setPosition(pos.x, pos.y + static_cast<float>(i - 1) * 12.0F);
+            slash.setRotation(-28.0F + static_cast<float>(i) * 18.0F);
+            slash.setFillColor(color);
+            window.draw(slash);
+        }
+
+        sf::CircleShape impact(18.0F + 22.0F * t);
+        impact.setOrigin(impact.getRadius(), impact.getRadius());
+        impact.setPosition(effect.end);
+        impact.setFillColor(sf::Color(color.r, color.g, color.b, static_cast<sf::Uint8>(70.0F * (1.0F - t))));
+        impact.setOutlineColor(color);
+        impact.setOutlineThickness(3.0F * (1.0F - t));
+        window.draw(impact);
         break;
     }
     case VisualEffectKind::Shield: {
-        sf::CircleShape ring(44.0F + 22.0F * t);
-        ring.setOrigin(44.0F + 22.0F * t, 44.0F + 22.0F * t);
+        sf::CircleShape field(42.0F + 18.0F * t);
+        field.setOrigin(field.getRadius(), field.getRadius());
+        field.setPosition(pos);
+        field.setFillColor(sf::Color(color.r, color.g, color.b, static_cast<sf::Uint8>(42.0F * (1.0F - t))));
+        window.draw(field);
+
+        sf::CircleShape ring(44.0F + 26.0F * t);
+        ring.setOrigin(ring.getRadius(), ring.getRadius());
         ring.setPosition(pos);
         ring.setFillColor(sf::Color::Transparent);
         ring.setOutlineColor(color);
-        ring.setOutlineThickness(5.0F * (1.0F - t));
+        ring.setOutlineThickness(6.0F * (1.0F - t));
         window.draw(ring);
+        for (int i = 0; i < 6; ++i) {
+            const float angle = (static_cast<float>(i) / 6.0F) * 6.28318F + t * 1.4F;
+            const float radius = 36.0F + 24.0F * t;
+            sf::ConvexShape shard;
+            shard.setPointCount(3);
+            shard.setPoint(0, {0.0F, -8.0F});
+            shard.setPoint(1, {6.0F, 7.0F});
+            shard.setPoint(2, {-6.0F, 7.0F});
+            shard.setPosition(pos.x + std::cos(angle) * radius, pos.y + std::sin(angle) * radius);
+            shard.setRotation(angle * 57.29578F);
+            shard.setFillColor(color);
+            window.draw(shard);
+        }
         break;
     }
     case VisualEffectKind::Heal:
     case VisualEffectKind::Energy:
     case VisualEffectKind::Debuff:
     case VisualEffectKind::BossPulse: {
-        const int particles = effect.kind == VisualEffectKind::BossPulse ? 12 : 6;
+        const int particles = effect.kind == VisualEffectKind::BossPulse ? 14 : 8;
         for (int i = 0; i < particles; ++i) {
-            const float angle = (static_cast<float>(i) / static_cast<float>(particles)) * 6.28318F;
-            const float radius = (28.0F + 56.0F * t);
-            sf::CircleShape spark(effect.kind == VisualEffectKind::BossPulse ? 7.0F : 5.0F);
+            const float angle = (static_cast<float>(i) / static_cast<float>(particles)) * 6.28318F + t * 2.0F;
+            const float radius = effect.kind == VisualEffectKind::Heal ? 18.0F + 44.0F * t : 28.0F + 62.0F * t;
+            const float lift = effect.kind == VisualEffectKind::Heal ? 46.0F * t : 0.0F;
+            sf::CircleShape spark(effect.kind == VisualEffectKind::BossPulse ? 7.0F : (effect.kind == VisualEffectKind::Debuff ? 6.0F : 5.0F));
             spark.setOrigin(spark.getRadius(), spark.getRadius());
-            spark.setPosition(pos.x + std::cos(angle) * radius, pos.y + std::sin(angle) * radius);
+            spark.setPosition(pos.x + std::cos(angle) * radius, pos.y + std::sin(angle) * radius - lift);
             spark.setFillColor(color);
             window.draw(spark);
+        }
+        if (effect.kind == VisualEffectKind::Energy || effect.kind == VisualEffectKind::BossPulse) {
+            sf::CircleShape pulse(22.0F + 38.0F * t);
+            pulse.setOrigin(pulse.getRadius(), pulse.getRadius());
+            pulse.setPosition(pos);
+            pulse.setFillColor(sf::Color::Transparent);
+            pulse.setOutlineColor(color);
+            pulse.setOutlineThickness(4.0F * (1.0F - t));
+            window.draw(pulse);
         }
         break;
     }
     case VisualEffectKind::EnemyStrike: {
-        sf::RectangleShape beam({150.0F, 6.0F});
-        beam.setOrigin(75.0F, 3.0F);
-        beam.setPosition(pos);
-        beam.setRotation(18.0F);
+        const float dx = effect.end.x - effect.start.x;
+        const float dy = effect.end.y - effect.start.y;
+        const float distance = std::sqrt(dx * dx + dy * dy);
+        const float angle = std::atan2(dy, dx) * 57.29578F;
+        sf::RectangleShape beam({std::max(40.0F, distance * k), 7.0F});
+        beam.setOrigin(0.0F, 3.5F);
+        beam.setPosition(effect.start);
+        beam.setRotation(angle);
         beam.setFillColor(color);
         window.draw(beam);
+        sf::CircleShape impact(22.0F + 20.0F * t);
+        impact.setOrigin(impact.getRadius(), impact.getRadius());
+        impact.setPosition(effect.end);
+        impact.setFillColor(sf::Color(color.r, color.g, color.b, static_cast<sf::Uint8>(72.0F * (1.0F - t))));
+        impact.setOutlineColor(color);
+        impact.setOutlineThickness(3.0F * (1.0F - t));
+        window.draw(impact);
         break;
     }
     }
@@ -319,8 +389,36 @@ void drawMenuCard(sf::RenderWindow& window, sf::Vector2f center, sf::Vector2f si
     window.draw(inner);
 }
 
-void drawMainMenuBackground(sf::RenderWindow& window)
+void drawTextureCover(sf::RenderWindow& window, const sf::Texture& texture)
 {
+    const sf::Vector2u size = texture.getSize();
+    if (size.x == 0 || size.y == 0) {
+        return;
+    }
+
+    sf::Sprite sprite(texture);
+    const float scale = std::max(ui::WindowWidth / static_cast<float>(size.x), ui::WindowHeight / static_cast<float>(size.y));
+    sprite.setScale(scale, scale);
+    sprite.setOrigin(static_cast<float>(size.x) / 2.0F, static_cast<float>(size.y) / 2.0F);
+    sprite.setPosition(ui::WindowWidth / 2.0F, ui::WindowHeight / 2.0F);
+    window.draw(sprite);
+}
+
+void drawImageShade(sf::RenderWindow& window, sf::Color color)
+{
+    sf::RectangleShape shade({ui::WindowWidth, ui::WindowHeight});
+    shade.setFillColor(color);
+    window.draw(shade);
+}
+
+void drawMainMenuBackground(sf::RenderWindow& window, const ResourceManager& resources)
+{
+    if (const sf::Texture* texture = resources.texture("bg_title")) {
+        drawTextureCover(window, *texture);
+        drawImageShade(window, sf::Color(5, 6, 11, 112));
+        return;
+    }
+
     sf::RectangleShape base({ui::WindowWidth, ui::WindowHeight});
     base.setFillColor(sf::Color(17, 17, 24));
     window.draw(base);
@@ -387,9 +485,109 @@ void drawMainMenuBackground(sf::RenderWindow& window)
     window.draw(shade);
 }
 
-void drawTopBar(sf::RenderWindow& window, GameApp& app)
+void drawMapBackground(sf::RenderWindow& window, const ResourceManager& resources, int level)
 {
-    const Player& player = app.runState().player();
+    const char* key = level == 1 ? "bg_map_act1" : (level == 2 ? "bg_map_act2" : "bg_map_act3");
+    if (const sf::Texture* texture = resources.texture(key)) {
+        drawTextureCover(window, *texture);
+        drawImageShade(window, sf::Color(7, 8, 13, 122));
+        return;
+    }
+
+    const sf::Color base = level == 1 ? sf::Color(22, 20, 26) : (level == 2 ? sf::Color(16, 25, 31) : sf::Color(13, 16, 31));
+    sf::RectangleShape canvas({ui::WindowWidth, ui::WindowHeight});
+    canvas.setFillColor(base);
+    window.draw(canvas);
+
+    const sf::Color glow = level == 1 ? sf::Color(218, 92, 46, 34) : (level == 2 ? sf::Color(77, 205, 181, 34) : sf::Color(126, 126, 230, 30));
+    for (int i = 0; i < 10; ++i) {
+        sf::CircleShape haze(260.0F + static_cast<float>(i) * 24.0F);
+        haze.setOrigin(haze.getRadius(), haze.getRadius());
+        haze.setPosition(650.0F, 402.0F + static_cast<float>(i) * 10.0F);
+        haze.setScale(1.85F, 0.38F);
+        haze.setFillColor(sf::Color(glow.r, glow.g, glow.b, static_cast<sf::Uint8>(18 - i)));
+        window.draw(haze);
+    }
+
+    for (int i = 0; i < 9; ++i) {
+        const float x = -90.0F + static_cast<float>(i) * 176.0F;
+        sf::ConvexShape ridge;
+        ridge.setPointCount(4);
+        ridge.setPoint(0, {x, 720.0F});
+        ridge.setPoint(1, {x + 92.0F, 475.0F + static_cast<float>((i % 3) * 34)});
+        ridge.setPoint(2, {x + 232.0F, 720.0F});
+        ridge.setPoint(3, {x + 60.0F, 720.0F});
+        ridge.setFillColor(level == 1 ? sf::Color(45, 34, 37, 178) : (level == 2 ? sf::Color(24, 50, 55, 164) : sf::Color(24, 27, 55, 170)));
+        window.draw(ridge);
+    }
+
+    if (level == 1) {
+        for (int i = 0; i < 12; ++i) {
+            sf::RectangleShape ember({4.0F + static_cast<float>(i % 3) * 2.0F, 38.0F + static_cast<float>(i % 4) * 9.0F});
+            ember.setPosition(84.0F + static_cast<float>(i) * 98.0F, 160.0F + static_cast<float>((i * 37) % 380));
+            ember.setRotation(-18.0F + static_cast<float>((i * 11) % 32));
+            ember.setFillColor(sf::Color(234, 138, 62, 44));
+            window.draw(ember);
+        }
+    } else if (level == 2) {
+        for (int i = 0; i < 8; ++i) {
+            const float x = 82.0F + static_cast<float>(i) * 160.0F;
+            sf::ConvexShape crystal;
+            crystal.setPointCount(5);
+            crystal.setPoint(0, {x, 610.0F});
+            crystal.setPoint(1, {x + 22.0F, 442.0F + static_cast<float>((i % 3) * 32)});
+            crystal.setPoint(2, {x + 58.0F, 410.0F + static_cast<float>((i % 2) * 28)});
+            crystal.setPoint(3, {x + 86.0F, 612.0F});
+            crystal.setPoint(4, {x + 42.0F, 654.0F});
+            crystal.setFillColor(sf::Color(68, 132, 138, 78));
+            crystal.setOutlineColor(sf::Color(149, 221, 210, 80));
+            crystal.setOutlineThickness(2.0F);
+            window.draw(crystal);
+        }
+    } else {
+        for (int i = 0; i < 18; ++i) {
+            sf::CircleShape star(1.5F + static_cast<float>(i % 3));
+            star.setPosition(50.0F + static_cast<float>((i * 67) % 1160), 96.0F + static_cast<float>((i * 43) % 430));
+            star.setFillColor(sf::Color(217, 218, 255, 110));
+            window.draw(star);
+        }
+        for (int i = 0; i < 5; ++i) {
+            sf::CircleShape clock(46.0F + static_cast<float>(i) * 8.0F);
+            clock.setOrigin(clock.getRadius(), clock.getRadius());
+            clock.setPosition(180.0F + static_cast<float>(i) * 235.0F, 540.0F - static_cast<float>(i % 2) * 48.0F);
+            clock.setFillColor(sf::Color::Transparent);
+            clock.setOutlineColor(sf::Color(142, 148, 208, 42));
+            clock.setOutlineThickness(3.0F);
+            window.draw(clock);
+        }
+    }
+
+    sf::RectangleShape veil({ui::WindowWidth, ui::WindowHeight});
+    veil.setFillColor(sf::Color(8, 9, 15, 90));
+    window.draw(veil);
+}
+
+void drawCombatBackground(sf::RenderWindow& window, const ResourceManager& resources, int level)
+{
+    const char* combatKey = level == 1 ? "bg_combat_act1" : (level == 2 ? "bg_combat_act2" : "bg_combat_act3");
+    const char* mapKey = level == 1 ? "bg_map_act1" : (level == 2 ? "bg_map_act2" : "bg_map_act3");
+    if (const sf::Texture* combatTexture = resources.texture(combatKey)) {
+        drawTextureCover(window, *combatTexture);
+    } else if (const sf::Texture* mapTexture = resources.texture(mapKey)) {
+        drawTextureCover(window, *mapTexture);
+    } else {
+        window.clear(ui::backgroundColor());
+    }
+
+    drawImageShade(window, sf::Color(3, 4, 8, 54));
+    sf::RectangleShape lowerShade({ui::WindowWidth, 212.0F});
+    lowerShade.setPosition(0.0F, 508.0F);
+    lowerShade.setFillColor(sf::Color(5, 6, 12, 132));
+    window.draw(lowerShade);
+}
+
+void drawTopBarForPlayer(sf::RenderWindow& window, GameApp& app, const Player& player)
+{
     ui::drawPanel(window, {0.0F, 0.0F, ui::WindowWidth, 58.0F}, sf::Color(26, 28, 38), sf::Color(56, 60, 75), 0.0F);
     ui::drawText(window, app.resources(), "Mini Spire", {24.0F, 16.0F}, 24, ui::accentColor());
     ui::drawText(window, app.resources(), "生命 " + std::to_string(player.hp()) + "/" + std::to_string(player.maxHp()),
@@ -421,9 +619,15 @@ void drawTopBar(sf::RenderWindow& window, GameApp& app)
     ui::drawText(window, app.resources(), relicText, {1042.0F, 18.0F}, 15, sf::Color(201, 190, 230));
 }
 
+void drawTopBar(sf::RenderWindow& window, GameApp& app)
+{
+    drawTopBarForPlayer(window, app, app.runState().player());
+}
+
 void drawCombatPotions(sf::RenderWindow& window, const ResourceManager& resources, const Player& player, sf::Vector2f mouse)
 {
-    ui::drawText(window, resources, "药水槽（左键使用 / 右键丢弃）", {68.0F, 420.0F}, 14, sf::Color(183, 211, 231));
+    const layout::CombatLayout combatLayout = layout::combatLayout();
+    ui::drawText(window, resources, "药水槽（左键使用 / 右键丢弃）", toSf(combatLayout.potionLabelPosition), 13, sf::Color(183, 211, 231));
     for (std::size_t i = 0; i < player.potions().size(); ++i) {
         const sf::FloatRect rect = combatPotionSlotRect(i);
         const bool hovered = rect.contains(mouse);
@@ -438,20 +642,90 @@ void drawCombatPotions(sf::RenderWindow& window, const ResourceManager& resource
     }
 }
 
-class MainMenuScene final : public Scene {
+class HistoryScene final : public Scene {
 public:
-    explicit MainMenuScene(GameApp& app)
+    explicit HistoryScene(GameApp& app)
         : Scene(app)
-        , startButton_({514.0F, 418.0F, 252.0F, 56.0F}, "开始")
-        , quitButton_({514.0F, 490.0F, 252.0F, 50.0F}, "退出")
+        , summary_(RunController::loadHistory())
+        , backButton_({510.0F, 610.0F, 260.0F, 48.0F}, "返回")
     {
     }
 
     void handleEvent(const sf::Event& event) override
     {
-        if (startButton_.clicked(event, app_.window())) {
-            app_.runState().startNewRun(randomSeed());
-            app_.changeScene(makeMapScene(app_));
+        if (backButton_.clicked(event, app_.window())) {
+            app_.changeScene(makeMainMenuScene(app_));
+        }
+    }
+
+    void update(float) override {}
+
+    void render(sf::RenderWindow& window) override
+    {
+        drawMainMenuBackground(window, app_.resources());
+        ui::drawText(window, app_.resources(), "历史记录", {520.0F, 108.0F}, 42, ui::accentColor());
+        ui::drawPanel(window, {300.0F, 180.0F, 680.0F, 380.0F}, sf::Color(26, 29, 42, 220), sf::Color(100, 109, 136), 1.0F);
+
+        ui::drawText(window,
+                     app_.resources(),
+                     "总局数 " + std::to_string(summary_.totalRuns) + "    成功次数 " + std::to_string(summary_.wins),
+                     {360.0F, 218.0F},
+                     22,
+                     sf::Color(236, 229, 205));
+
+        float y = 270.0F;
+        if (summary_.recent.empty()) {
+            ui::drawText(window, app_.resources(), "还没有完成过一局。", {360.0F, y}, 18, sf::Color(214, 210, 198));
+        } else {
+            for (std::size_t i = 0; i < summary_.recent.size(); ++i) {
+                const RunHistoryEntry& entry = summary_.recent.at(i);
+                const std::string result = entry.won ? "成功" : "失败";
+                const std::string line = "最近第 " + std::to_string(i + 1) + " 局  " + result +
+                                         "  楼层 " + std::to_string(entry.level) + "/" + std::to_string(entry.maxLevels) +
+                                         "  步数 " + std::to_string(entry.steps) +
+                                         "  生命 " + std::to_string(entry.hp) + "/" + std::to_string(entry.maxHp) +
+                                         "  牌组 " + std::to_string(entry.deckSize);
+                ui::drawText(window,
+                             app_.resources(),
+                             line,
+                             {360.0F, y},
+                             17,
+                             entry.won ? sf::Color(194, 235, 186) : sf::Color(239, 191, 186));
+                y += 46.0F;
+            }
+        }
+
+        backButton_.draw(window, app_.resources());
+    }
+
+private:
+    RunHistorySummary summary_;
+    ui::Button backButton_;
+};
+
+class MainMenuScene final : public Scene {
+public:
+    explicit MainMenuScene(GameApp& app)
+        : Scene(app)
+        , continueButton_({514.0F, 382.0F, 252.0F, 52.0F}, "继续游戏")
+        , startButton_({514.0F, 446.0F, 252.0F, 52.0F}, "开始爬塔")
+        , historyButton_({514.0F, 510.0F, 252.0F, 52.0F}, "历史记录")
+        , quitButton_({514.0F, 574.0F, 252.0F, 48.0F}, "退出")
+    {
+    }
+
+    void handleEvent(const sf::Event& event) override
+    {
+        if (RunController::hasSaveFile() && continueButton_.clicked(event, app_.window())) {
+            if (app_.runState().loadFromFile()) {
+                app_.changeScene(makeMapScene(app_));
+            } else {
+                message_ = "存档读取失败，可以开始一局新游戏。";
+            }
+        } else if (startButton_.clicked(event, app_.window())) {
+            app_.changeScene(makeCharacterSelectScene(app_));
+        } else if (historyButton_.clicked(event, app_.window())) {
+            app_.changeScene(makeHistoryScene(app_));
         } else if (quitButton_.clicked(event, app_.window())) {
             app_.quit();
         }
@@ -461,7 +735,7 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
-        drawMainMenuBackground(window);
+        drawMainMenuBackground(window, app_.resources());
 
         sf::Text shadow = ui::makeText(app_.resources(), "Mini Spire", 78, sf::Color(0, 0, 0, 190));
         shadow.setPosition(416.0F, 146.0F);
@@ -471,19 +745,122 @@ public:
         if (!app_.resources().fontLoaded()) {
             ui::drawText(window, app_.resources(), "警告：没有找到字体，文字可能不可见。请安装微软雅黑或把字体放入 assets/fonts。", {260.0F, 650.0F}, 16, sf::Color(255, 160, 140));
         }
+        if (!message_.empty()) {
+            ui::drawText(window, app_.resources(), message_, {448.0F, 350.0F}, 16, sf::Color(255, 184, 140));
+        }
+        if (RunController::hasSaveFile()) {
+            continueButton_.draw(window, app_.resources());
+        }
         startButton_.draw(window, app_.resources());
+        historyButton_.draw(window, app_.resources());
         quitButton_.draw(window, app_.resources());
     }
 
 private:
+    ui::Button continueButton_;
     ui::Button startButton_;
+    ui::Button historyButton_;
     ui::Button quitButton_;
+    std::string message_;
+};
+
+class CharacterSelectScene final : public Scene {
+public:
+    explicit CharacterSelectScene(GameApp& app)
+        : Scene(app)
+        , characters_(characterDefinitions())
+        , backButton_({536.0F, 610.0F, 208.0F, 48.0F}, "返回主菜单")
+    {
+    }
+
+    void handleEvent(const sf::Event& event) override
+    {
+        if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left) {
+            return;
+        }
+
+        if (backButton_.clicked(event, app_.window())) {
+            app_.changeScene(makeMainMenuScene(app_));
+            return;
+        }
+
+        const sf::Vector2f point = mousePoint(event, app_.window());
+        for (std::size_t i = 0; i < characters_.size(); ++i) {
+            if (!characterRect(i).contains(point)) {
+                continue;
+            }
+            app_.runState().deleteSaveFile();
+            app_.runState().startNewRun(characters_.at(i).id, randomSeed());
+            app_.changeScene(makeMapScene(app_));
+            return;
+        }
+    }
+
+    void update(float) override {}
+
+    void render(sf::RenderWindow& window) override
+    {
+        drawMainMenuBackground(window, app_.resources());
+        ui::drawText(window, app_.resources(), "选择角色", {520.0F, 92.0F}, 42, ui::accentColor());
+        ui::drawText(window, app_.resources(), "每个角色拥有专属初始牌组、卡池和开局机制。", {402.0F, 148.0F}, 18, sf::Color(230, 224, 210));
+
+        const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+        for (std::size_t i = 0; i < characters_.size(); ++i) {
+            drawCharacterOption(window, characters_.at(i), characterRect(i), mouse);
+        }
+
+        backButton_.draw(window, app_.resources());
+    }
+
+private:
+    sf::FloatRect characterRect(std::size_t index) const
+    {
+        return {136.0F + static_cast<float>(index) * 342.0F, 214.0F, 314.0F, 330.0F};
+    }
+
+    void drawCharacterOption(sf::RenderWindow& window,
+                             const CharacterDefinition& character,
+                             sf::FloatRect rect,
+                             sf::Vector2f mouse) const
+    {
+        const bool hovered = rect.contains(mouse);
+        ui::drawPanel(window,
+                      rect,
+                      hovered ? sf::Color(38, 43, 60, 238) : sf::Color(25, 29, 42, 226),
+                      hovered ? ui::accentColor() : sf::Color(92, 104, 130),
+                      hovered ? 2.0F : 1.0F);
+        ui::drawText(window, app_.resources(), character.name, {rect.left + 24.0F, rect.top + 24.0F}, 27, sf::Color::White);
+        ui::drawText(window, app_.resources(), character.subtitle, {rect.left + 24.0F, rect.top + 62.0F}, 17, sf::Color(246, 206, 132));
+        ui::drawText(window, app_.resources(), character.description, {rect.left + 24.0F, rect.top + 100.0F}, 15, sf::Color(226, 222, 211));
+        ui::drawText(window,
+                     app_.resources(),
+                     "生命 " + std::to_string(character.maxHp) + "  能量 " + std::to_string(character.maxEnergy) +
+                         "  金币 " + std::to_string(character.startingGold),
+                     {rect.left + 24.0F, rect.top + 146.0F},
+                     15,
+                     sf::Color(218, 226, 238));
+        const std::string relic = character.startingRelics.empty() ? "无" : character.startingRelics.front();
+        ui::drawText(window, app_.resources(), "开局圣遗物：" + relic, {rect.left + 24.0F, rect.top + 176.0F}, 15, sf::Color(205, 221, 245));
+        ui::drawText(window,
+                     app_.resources(),
+                     "初始牌组 " + std::to_string(character.startingDeck.size()) + " 张 / 专属卡池 " +
+                         std::to_string(character.cardPool.size()) + " 张",
+                     {rect.left + 24.0F, rect.top + 206.0F},
+                     15,
+                     sf::Color(224, 218, 202));
+
+        ui::drawPlayerSprite(window, app_.resources(), character.id, {rect.left + rect.width / 2.0F, rect.top + 278.0F}, 0.4F);
+    }
+
+    std::vector<CharacterDefinition> characters_;
+    ui::Button backButton_;
 };
 
 class MapScene final : public Scene {
 public:
     explicit MapScene(GameApp& app)
         : Scene(app)
+        , saveButton_({1054.0F, 104.0F, 174.0F, 44.0F}, "存档并返回")
     {
     }
 
@@ -493,6 +870,11 @@ public:
             return;
         }
         const sf::Vector2f point = mousePoint(event, app_.window());
+        if (saveButton_.clicked(event, app_.window())) {
+            app_.runState().saveToFile();
+            app_.changeScene(makeMainMenuScene(app_));
+            return;
+        }
         for (const MapNode& node : app_.runState().map()) {
             const sf::Vector2f center = nodePosition(app_.runState().map(), node);
             const sf::FloatRect bounds(center.x - 34.0F, center.y - 34.0F, 68.0F, 68.0F);
@@ -526,9 +908,11 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
+        drawMapBackground(window, app_.resources(), app_.runState().level());
         drawTopBar(window, app_);
         ui::drawText(window, app_.resources(), app_.runState().levelName(), {34.0F, 82.0F}, 24, ui::accentColor());
         ui::drawText(window, app_.resources(), "选择下一处节点", {34.0F, 116.0F}, 18, sf::Color(224, 224, 232));
+        saveButton_.draw(window, app_.resources());
 
         const std::vector<MapNode>& nodes = app_.runState().map();
         for (const MapNode& node : nodes) {
@@ -567,6 +951,9 @@ public:
             ui::drawText(window, app_.resources(), toString(node.type), {center.x - 28.0F, center.y + 42.0F}, 14, sf::Color(218, 216, 205));
         }
     }
+
+private:
+    ui::Button saveButton_;
 };
 
 class CombatScene final : public Scene {
@@ -574,7 +961,7 @@ public:
     explicit CombatScene(GameApp& app)
         : Scene(app)
         , combat_(app.runState().player(), app.runState().makeEnemyForActiveNode(), app.runState().deck(), randomSeed())
-        , endTurnButton_({1098.0F, 424.0F, 142.0F, 52.0F}, "结束回合")
+        , endTurnButton_(toSf(layout::combatLayout().endTurnButton), "结束回合")
         , continueButton_({536.0F, 345.0F, 208.0F, 56.0F}, "继续")
     {
         combat_.start();
@@ -601,7 +988,7 @@ public:
                 app_.runState().completeActiveNode();
                 if (boss) {
                     if (app_.runState().finalLevel()) {
-                        app_.runState().setWon(true);
+                        app_.runState().recordRunResult(true);
                         app_.changeScene(makeVictoryScene(app_, true));
                     } else {
                         app_.changeScene(makeLevelRewardScene(app_));
@@ -610,6 +997,8 @@ public:
                     app_.changeScene(makeRewardScene(app_));
                 }
             } else {
+                app_.runState().syncPlayerAfterCombat(combat_.player());
+                app_.runState().recordRunResult(false);
                 app_.changeScene(makeVictoryScene(app_, false));
             }
             return;
@@ -667,38 +1056,50 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
-        drawTopBar(window, app_);
+        drawCombatBackground(window, app_.resources(), app_.runState().level());
+        drawTopBarForPlayer(window, app_, combat_.player());
+        const layout::CombatLayout combatLayout = layout::combatLayout();
 
-        ui::drawPanel(window, {26.0F, 76.0F, 410.0F, 400.0F}, sf::Color(29, 32, 44), sf::Color(76, 83, 105), 1.0F);
-        ui::drawCreaturePanel(window, app_.resources(), combat_.player(), {56.0F, 290.0F, 330.0F, 128.0F},
+        ui::drawPanel(window, toSf(combatLayout.playerPanel), sf::Color(24, 27, 40, 226), sf::Color(118, 136, 158), 1.0F);
+        ui::drawCreaturePanel(window, app_.resources(), combat_.player(), toSf(combatLayout.playerCreaturePanel),
                               "能量 " + std::to_string(combat_.player().energy()) + "/" + std::to_string(combat_.player().maxEnergy()));
-        ui::drawText(window, app_.resources(), "抽牌 " + std::to_string(combat_.deck().drawCount()) +
-                                           "  弃牌 " + std::to_string(combat_.deck().discardCount()) +
-                                           "  消耗 " + std::to_string(combat_.deck().exhaustCount()),
-                     {68.0F, 438.0F}, 16, sf::Color(205, 210, 225));
+        ui::drawPanel(window, toSf(combatLayout.deckInfoPanel), sf::Color(22, 25, 36, 218), sf::Color(93, 108, 132), 1.0F);
+        ui::drawText(window, app_.resources(), "抽牌 " + std::to_string(combat_.deck().drawCount()),
+                     toSf(combatLayout.deckTextPosition), 14, sf::Color(222, 226, 238));
+        ui::drawText(window, app_.resources(), "弃牌 " + std::to_string(combat_.deck().discardCount()),
+                     {combatLayout.deckTextPosition.x, combatLayout.deckTextPosition.y + 24.0F}, 14, sf::Color(222, 226, 238));
+        ui::drawText(window, app_.resources(), "消耗 " + std::to_string(combat_.deck().exhaustCount()),
+                     {combatLayout.deckTextPosition.x, combatLayout.deckTextPosition.y + 48.0F}, 14, sf::Color(222, 226, 238));
         const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         drawCombatPotions(window, app_.resources(), combat_.player(), mouse);
 
-        ui::drawPanel(window, {843.0F, 76.0F, 410.0F, 400.0F}, sf::Color(29, 32, 44), sf::Color(76, 83, 105), 1.0F);
         const EnemyMove intent = combat_.enemy().previewMove();
-        ui::drawCreaturePanel(window, app_.resources(), combat_.enemy(), {890.0F, 160.0F, 310.0F, 134.0F}, "意图：" + intent.intentText);
+        ui::drawPanel(window, toSf(combatLayout.enemyPanel), sf::Color(24, 27, 40, 226), sf::Color(118, 136, 158), 1.0F);
+        ui::drawCreaturePanel(window, app_.resources(), combat_.enemy(), toSf(combatLayout.enemyCreaturePanel), "意图：" + intent.intentText);
 
-        ui::drawEnemySprite(window, app_.resources(), combat_.enemy().kind(), enemyCenter(), isActiveBossNode() ? 1.0F : 0.85F);
-        ui::drawPlayerSprite(window, app_.resources(), playerCenter(), 0.92F);
+        ui::drawEnemySprite(window,
+                            app_.resources(),
+                            combat_.enemy().kind(),
+                            toSf(combatLayout.enemySpriteCenter),
+                            isActiveBossNode() ? combatLayout.bossSpriteScale : combatLayout.enemySpriteScale);
+        ui::drawPlayerSprite(window, app_.resources(), app_.runState().characterId(), toSf(combatLayout.playerSpriteCenter), combatLayout.playerSpriteScale);
 
         for (const VisualEffect& effect : effects_) {
             drawVisualEffect(window, app_.resources(), effect);
         }
 
-        ui::drawPanel(window, {465.0F, 88.0F, 350.0F, 388.0F}, sf::Color(32, 35, 49), sf::Color(77, 84, 107), 1.0F);
-        ui::drawText(window, app_.resources(), "战斗记录", {486.0F, 108.0F}, 22, ui::accentColor());
-        float y = 146.0F;
+        ui::drawPanel(window, toSf(combatLayout.logPanel), sf::Color(20, 22, 34, 218), sf::Color(100, 108, 132), 1.0F);
+        ui::drawText(window, app_.resources(), "战斗记录", toSf(combatLayout.logTitlePosition), 22, ui::accentColor());
+        float y = combatLayout.logFirstLinePosition.y;
         for (const CombatEvent& event : combat_.events()) {
-            ui::drawText(window, app_.resources(), event.text, {486.0F, y}, 15, sf::Color(219, 219, 225));
-            y += 32.0F;
+            ui::drawText(window, app_.resources(), event.text, {combatLayout.logFirstLinePosition.x, y}, 14, sf::Color(231, 231, 236));
+            y += 28.0F;
+            if (y > combatLayout.logPanel.top + combatLayout.logPanel.height - 26.0F) {
+                break;
+            }
         }
         if (!lastMessage_.empty() && lastMessage_ != "ok") {
-            ui::drawText(window, app_.resources(), lastMessage_, {486.0F, 420.0F}, 16, sf::Color(255, 174, 137));
+            ui::drawText(window, app_.resources(), lastMessage_, toSf(combatLayout.lastMessagePosition), 15, sf::Color(255, 174, 137));
         }
 
         endTurnButton_.setEnabled(combat_.isPlayerTurn());
@@ -724,12 +1125,12 @@ public:
 private:
     sf::Vector2f playerCenter() const
     {
-        return {230.0F, 220.0F};
+        return toSf(layout::combatLayout().playerSpriteCenter);
     }
 
     sf::Vector2f enemyCenter() const
     {
-        return {1045.0F, 348.0F};
+        return toSf(layout::combatLayout().enemySpriteCenter);
     }
 
     void spawnCardEffects(const Card& card)
@@ -875,31 +1276,40 @@ public:
     explicit LevelRewardScene(GameApp& app)
         : Scene(app)
         , rewardCards_(app.runState().makeRewards(3))
-        , vitalityButton_({226.0F, 548.0F, 244.0F, 58.0F}, "生命核心")
-        , treasureButton_({518.0F, 548.0F, 244.0F, 58.0F}, "战利品箱")
-        , relicButton_({810.0F, 548.0F, 244.0F, 58.0F}, "Boss 圣遗物")
+        , vitalityButton_({226.0F, 586.0F, 244.0F, 58.0F}, "生命核心")
+        , treasureButton_({518.0F, 586.0F, 244.0F, 58.0F}, "战利品箱")
+        , relicButton_({810.0F, 586.0F, 244.0F, 58.0F}, "Boss 圣遗物")
         , completedLevel_(app.runState().level())
     {
+        app_.runState().recoverAfterBoss();
     }
 
     void handleEvent(const sf::Event& event) override
     {
+        if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+            const sf::Vector2f point = mousePoint(event, app_.window());
+            for (std::size_t i = 0; i < rewardCards_.size(); ++i) {
+                if (levelRewardCardRect(i).contains(point)) {
+                    selectedCardIndex_ = i;
+                    return;
+                }
+            }
+        }
+
         if (vitalityButton_.clicked(event, app_.window())) {
             Player& player = app_.runState().player();
             player.setMaxHp(player.maxHp() + 8);
-            player.heal(28);
-            app_.runState().startNextLevel();
-            app_.changeScene(makeMapScene(app_));
+            app_.runState().recoverAfterBoss();
+            addSelectedCard();
+            enterNextLevel();
         } else if (treasureButton_.clicked(event, app_.window())) {
             app_.runState().player().gainGold(120);
-            app_.runState().addCardToDeck(rewardCards_.at(0));
-            app_.runState().startNextLevel();
-            app_.changeScene(makeMapScene(app_));
+            addSelectedCardOrFallback(0);
+            enterNextLevel();
         } else if (relicButton_.clicked(event, app_.window())) {
             app_.runState().player().addRelic("第 " + std::to_string(completedLevel_) + " 层 Boss 印记");
-            app_.runState().addCardToDeck(rewardCards_.at(1));
-            app_.runState().startNextLevel();
-            app_.changeScene(makeMapScene(app_));
+            addSelectedCardOrFallback(1);
+            enterNextLevel();
         }
     }
 
@@ -909,33 +1319,38 @@ public:
     {
         drawTopBar(window, app_);
         ui::drawText(window, app_.resources(), "第 " + std::to_string(completedLevel_) + " 层 Boss 已击败", {440.0F, 96.0F}, 32, ui::accentColor());
-        ui::drawText(window, app_.resources(), "选择一份 Boss 奖励，然后进入下一层。", {454.0F, 146.0F}, 20, sf::Color(224, 219, 203));
+        ui::drawPanel(window, {282.0F, 142.0F, 716.0F, 92.0F}, sf::Color(22, 25, 38, 220), sf::Color(98, 108, 134), 1.0F);
+        ui::drawText(window, app_.resources(), storyTitleForLevel(completedLevel_), {316.0F, 156.0F}, 21, sf::Color(245, 231, 190));
+        ui::drawText(window, app_.resources(), storyBodyForLevel(completedLevel_), {316.0F, 188.0F}, 16, sf::Color(226, 223, 211));
+        ui::drawText(window, app_.resources(), "你的生命已回满。选择一份 Boss 奖励，然后进入下一层。", {454.0F, 248.0F}, 18, sf::Color(224, 219, 203));
 
         const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
         for (std::size_t i = 0; i < rewardCards_.size(); ++i) {
             const sf::FloatRect rect = levelRewardCardRect(i);
-            ui::drawCard(window, app_.resources(), rewardCards_.at(i), rect, true, rect.contains(mouse));
+            const bool selected = selectedCardIndex_ && *selectedCardIndex_ == i;
+            ui::drawCard(window, app_.resources(), rewardCards_.at(i), rect, true, rect.contains(mouse) || selected);
         }
 
+        const std::string selectedLine = selectedCardIndex_ ? "获得已选奖励卡牌" : "点击上方卡牌可先选择";
         drawRewardOption(window,
-                         {210.0F, 466.0F, 276.0F, 160.0F},
+                         {210.0F, 482.0F, 276.0F, 170.0F},
                          "生命核心",
                          "最大生命 +8",
-                         "立即回复 28 生命",
+                         selectedLine,
                          vitalityButton_,
                          mouse);
         drawRewardOption(window,
-                         {502.0F, 466.0F, 276.0F, 160.0F},
+                         {502.0F, 482.0F, 276.0F, 170.0F},
                          "战利品箱",
                          "金币 +120",
-                         "获得左侧奖励卡牌",
+                         selectedCardIndex_ ? selectedLine : "未选卡时获得左侧卡牌",
                          treasureButton_,
                          mouse);
         drawRewardOption(window,
-                         {794.0F, 466.0F, 276.0F, 160.0F},
+                         {794.0F, 482.0F, 276.0F, 170.0F},
                          "Boss 圣遗物",
                          "获得 Boss 印记",
-                         "获得中间奖励卡牌",
+                         selectedCardIndex_ ? selectedLine : "未选卡时获得中间卡牌",
                          relicButton_,
                          mouse);
         vitalityButton_.draw(window, app_.resources());
@@ -946,7 +1361,23 @@ public:
 private:
     sf::FloatRect levelRewardCardRect(std::size_t index) const
     {
-        return {340.0F + static_cast<float>(index) * 210.0F, 236.0F, 150.0F, 208.0F};
+        return {340.0F + static_cast<float>(index) * 210.0F, 282.0F, 150.0F, 192.0F};
+    }
+
+    std::string storyTitleForLevel(int level) const
+    {
+        if (level == 1) {
+            return "余烬核心的回声";
+        }
+        return "晶化穹顶的月光";
+    }
+
+    std::string storyBodyForLevel(int level) const
+    {
+        if (level == 1) {
+            return "灰烬牢狱在身后坍塌，旅人在余烬核心旁重整呼吸，伤口被温热火光缝合。";
+        }
+        return "温室穹顶裂开一道月光，结晶从血肉中消退，裂隙旅人的脚步重新变得坚定。";
     }
 
     void drawRewardOption(sf::RenderWindow& window,
@@ -968,10 +1399,33 @@ private:
         ui::drawText(window, app_.resources(), line2, {rect.left + 20.0F, rect.top + 78.0F}, 16, sf::Color(224, 220, 208));
     }
 
+    void addSelectedCard()
+    {
+        if (selectedCardIndex_ && *selectedCardIndex_ < rewardCards_.size()) {
+            app_.runState().addCardToDeck(rewardCards_.at(*selectedCardIndex_));
+        }
+    }
+
+    void addSelectedCardOrFallback(std::size_t fallback)
+    {
+        if (selectedCardIndex_ && *selectedCardIndex_ < rewardCards_.size()) {
+            app_.runState().addCardToDeck(rewardCards_.at(*selectedCardIndex_));
+        } else if (fallback < rewardCards_.size()) {
+            app_.runState().addCardToDeck(rewardCards_.at(fallback));
+        }
+    }
+
+    void enterNextLevel()
+    {
+        app_.runState().startNextLevel();
+        app_.changeScene(makeMapScene(app_));
+    }
+
     std::vector<Card> rewardCards_;
     ui::Button vitalityButton_;
     ui::Button treasureButton_;
     ui::Button relicButton_;
+    std::optional<std::size_t> selectedCardIndex_;
     int completedLevel_ {1};
 };
 
@@ -985,7 +1439,9 @@ public:
         , relicSold_(relics_.size(), false)
         , potions_(app.runState().makeShopPotions(3))
         , potionSold_(potions_.size(), false)
-        , leaveButton_({552.0F, 610.0F, 176.0F, 48.0F}, "离开商店")
+        , removeButton_({720.0F, 586.0F, 360.0F, 42.0F}, "移除卡牌 75 金币")
+        , leaveButton_({552.0F, 626.0F, 176.0F, 48.0F}, "离开商店")
+        , cancelRemoveButton_({536.0F, 610.0F, 208.0F, 44.0F}, "取消")
     {
     }
 
@@ -994,9 +1450,26 @@ public:
         if (event.type != sf::Event::MouseButtonPressed || event.mouseButton.button != sf::Mouse::Left) {
             return;
         }
+        if (removingCard_) {
+            handleRemovalClick(event);
+            return;
+        }
         if (leaveButton_.clicked(event, app_.window())) {
             app_.runState().completeActiveNode();
             app_.changeScene(makeMapScene(app_));
+            return;
+        }
+        if (removeButton_.clicked(event, app_.window())) {
+            if (cardRemovalUsed_) {
+                message_ = "本间商店已经提供过一次移除服务。";
+            } else if (app_.runState().deck().size() <= 5) {
+                message_ = "牌组太薄，不能继续移除。";
+            } else if (app_.runState().player().gold() < removeCardCost()) {
+                message_ = "金币不足，无法移除卡牌。";
+            } else {
+                removingCard_ = true;
+                message_ = "选择一张要从牌组中移除的牌。";
+            }
             return;
         }
 
@@ -1081,7 +1554,16 @@ public:
             drawPotionOffer(window, mouse, i);
         }
 
+        removeButton_.setEnabled(!cardRemovalUsed_ && app_.runState().deck().size() > 5 && app_.runState().player().gold() >= removeCardCost());
+        removeButton_.draw(window, app_.resources());
+        if (cardRemovalUsed_) {
+            ui::drawText(window, app_.resources(), "本商店已移除过 1 张牌", {732.0F, 634.0F}, 14, sf::Color(172, 178, 194));
+        }
         leaveButton_.draw(window, app_.resources());
+
+        if (removingCard_) {
+            drawRemovalOverlay(window, mouse);
+        }
     }
 
 private:
@@ -1100,6 +1582,16 @@ private:
         return {720.0F, 424.0F + static_cast<float>(index) * 54.0F, 360.0F, 42.0F};
     }
 
+    sf::FloatRect removalCardRect(std::size_t index) const
+    {
+        const std::size_t column = index % 5;
+        const std::size_t row = index / 5;
+        return {204.0F + static_cast<float>(column) * 174.0F,
+                238.0F + static_cast<float>(row) * 58.0F,
+                160.0F,
+                44.0F};
+    }
+
     int cardPriceFor(std::size_t index) const
     {
         static const std::array<int, 3> prices {50, 65, 80};
@@ -1116,6 +1608,11 @@ private:
     {
         static const std::array<int, 3> prices {38, 46, 54};
         return prices.at(index % prices.size());
+    }
+
+    int removeCardCost() const
+    {
+        return 75;
     }
 
     bool hasFreePotionSlot() const
@@ -1170,14 +1667,77 @@ private:
                      {rect.left + 270.0F, rect.top + 9.0F}, 14, sold ? sf::Color(150, 150, 150) : sf::Color(239, 202, 101));
     }
 
+    void handleRemovalClick(const sf::Event& event)
+    {
+        if (cancelRemoveButton_.clicked(event, app_.window())) {
+            removingCard_ = false;
+            message_ = "已取消移除。";
+            return;
+        }
+
+        const sf::Vector2f point = mousePoint(event, app_.window());
+        const std::vector<Card>& deck = app_.runState().deck();
+        const std::size_t visibleCount = std::min<std::size_t>(deck.size(), 25);
+        for (std::size_t i = 0; i < visibleCount; ++i) {
+            if (!removalCardRect(i).contains(point)) {
+                continue;
+            }
+            const PlayResult result = app_.runState().removeCardFromDeck(i, removeCardCost());
+            message_ = result.message;
+            if (result.accepted) {
+                cardRemovalUsed_ = true;
+            }
+            removingCard_ = false;
+            return;
+        }
+    }
+
+    void drawRemovalOverlay(sf::RenderWindow& window, sf::Vector2f mouse)
+    {
+        sf::RectangleShape shade({ui::WindowWidth, ui::WindowHeight});
+        shade.setFillColor(sf::Color(0, 0, 0, 150));
+        window.draw(shade);
+
+        ui::drawPanel(window, {170.0F, 152.0F, 940.0F, 488.0F}, sf::Color(24, 28, 41, 246), ui::accentColor(), 2.0F);
+        ui::drawText(window, app_.resources(), "移除一张卡牌", {214.0F, 184.0F}, 30, ui::accentColor());
+        ui::drawText(window,
+                     app_.resources(),
+                     "花费 " + std::to_string(removeCardCost()) + " 金币。点击下方牌名确认移除。",
+                     {214.0F, 218.0F},
+                     17,
+                     sf::Color(226, 222, 210));
+
+        const std::vector<Card>& deck = app_.runState().deck();
+        const std::size_t visibleCount = std::min<std::size_t>(deck.size(), 25);
+        for (std::size_t i = 0; i < visibleCount; ++i) {
+            const sf::FloatRect rect = removalCardRect(i);
+            const bool hovered = rect.contains(mouse);
+            ui::drawPanel(window,
+                          rect,
+                          hovered ? sf::Color(58, 69, 92) : sf::Color(39, 44, 60),
+                          hovered ? ui::accentColor() : sf::Color(94, 104, 128),
+                          hovered ? 2.0F : 1.0F);
+            ui::drawText(window, app_.resources(), deck.at(i).name, {rect.left + 12.0F, rect.top + 8.0F}, 15, sf::Color::White);
+            ui::drawText(window, app_.resources(), toString(deck.at(i).type), {rect.left + 104.0F, rect.top + 10.0F}, 13, sf::Color(196, 202, 218));
+        }
+        if (deck.size() > visibleCount) {
+            ui::drawText(window, app_.resources(), "当前只显示前 25 张牌。", {214.0F, 542.0F}, 15, sf::Color(245, 194, 130));
+        }
+        cancelRemoveButton_.draw(window, app_.resources());
+    }
+
     std::vector<Card> cards_;
     std::vector<bool> cardSold_;
     std::vector<std::string> relics_;
     std::vector<bool> relicSold_;
     std::vector<Potion> potions_;
     std::vector<bool> potionSold_;
+    ui::Button removeButton_;
     ui::Button leaveButton_;
+    ui::Button cancelRemoveButton_;
     std::string message_;
+    bool removingCard_ {false};
+    bool cardRemovalUsed_ {false};
 };
 
 class RestScene final : public Scene {
@@ -1277,17 +1837,17 @@ public:
         : Scene(app)
         , won_(won)
         , newRunButton_({510.0F, 420.0F, 260.0F, 54.0F}, "再来一局")
-        , quitButton_({510.0F, 492.0F, 260.0F, 48.0F}, "退出")
+        , quitButton_({510.0F, 492.0F, 260.0F, 48.0F}, "返回主菜单")
     {
     }
 
     void handleEvent(const sf::Event& event) override
     {
         if (newRunButton_.clicked(event, app_.window())) {
-            app_.runState().startNewRun(randomSeed());
-            app_.changeScene(makeMapScene(app_));
+            app_.runState().deleteSaveFile();
+            app_.changeScene(makeCharacterSelectScene(app_));
         } else if (quitButton_.clicked(event, app_.window())) {
-            app_.quit();
+            app_.changeScene(makeMainMenuScene(app_));
         }
     }
 
@@ -1295,8 +1855,9 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
+        drawMainMenuBackground(window, app_.resources());
         ui::drawText(window, app_.resources(), won_ ? "尖塔核心已被改写" : "旅途在此中断", {390.0F, 170.0F}, 42, won_ ? ui::accentColor() : sf::Color(255, 144, 132));
-        ui::drawText(window, app_.resources(), won_ ? "你完成了一次完整爬塔。现在可以继续扩充卡牌、敌人和遗物。" : "失败也是一次数据回收：调整牌组，再试一次。",
+        ui::drawText(window, app_.resources(), won_ ? "尖塔核心已被改写，但旅途仍在继续......" : "失败并非终点。换一套牌，再向上走。",
                      {360.0F, 245.0F}, 20, sf::Color(225, 220, 205));
         newRunButton_.draw(window, app_.resources());
         quitButton_.draw(window, app_.resources());
@@ -1313,6 +1874,16 @@ private:
 std::unique_ptr<Scene> makeMainMenuScene(GameApp& app)
 {
     return std::make_unique<MainMenuScene>(app);
+}
+
+std::unique_ptr<Scene> makeHistoryScene(GameApp& app)
+{
+    return std::make_unique<HistoryScene>(app);
+}
+
+std::unique_ptr<Scene> makeCharacterSelectScene(GameApp& app)
+{
+    return std::make_unique<CharacterSelectScene>(app);
 }
 
 std::unique_ptr<Scene> makeMapScene(GameApp& app)
