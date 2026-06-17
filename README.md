@@ -43,9 +43,27 @@ Mini Spire 是一个用 **C++ + SFML** 实现的原创卡牌爬塔游戏竖切�
 - 第三层击败最终 Boss 后通关。
 - 爬塔失败后可以返回主菜单，不会直接关闭程序。
 
-## 环境要求
+## 直接下载游玩（推荐）
 
-推荐环境：
+如果你只是想玩游戏，不需要安装 Visual Studio、CMake 或 SFML。
+
+1. 打开 GitHub Releases：
+
+   <https://github.com/Jiashu-Yu/mini-spire/releases>
+
+2. 下载最新版本里的 `MiniSpire-Windows-x64.zip`。
+3. 解压整个 zip。
+4. 双击解压出来的 `mini_spire.exe`。
+
+请不要把 `mini_spire.exe` 单独拖出来运行，exe 旁边需要保留 `assets/` 文件夹和 DLL 文件。
+
+如果 Windows SmartScreen 提示未知发布者，点击 `更多信息`，再点击 `仍要运行`。这是因为课程项目没有购买代码签名证书。
+
+## 从源码构建（开发者）
+
+下面的步骤适合想查看源码、修改游戏或自己重新打包的人。
+
+开发环境：
 
 - Windows 10 / Windows 11 64-bit
 - Visual Studio 2022
@@ -65,9 +83,9 @@ git clone https://github.com/Jiashu-Yu/mini-spire.git
 cd mini-spire
 ```
 
-## 最简单运行方式（Windows）
+## 从源码一键运行（Windows）
 
-如果你只是想玩游戏，推荐按下面的步骤走：
+如果你想从源码构建并运行，推荐按下面的步骤走：
 
 1. 安装 Visual Studio 2022，并勾选 `Desktop development with C++`。
 2. 下载 SFML 2.6.2 的 `Visual C++ 17 (2022) - 64-bit` 版本。
@@ -92,6 +110,23 @@ cd mini-spire
 ```powershell
 .\scripts\run_windows.ps1 -SfmlRoot "C:\Tools\SFML-2.6.2"
 ```
+
+## 生成免安装 zip（发布者）
+
+如果你想生成可上传到 GitHub Releases 的玩家版本：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\package_windows.ps1
+```
+
+脚本会生成：
+
+```text
+dist\MiniSpire-Windows-x64.zip
+```
+
+这个 zip 已经包含 `mini_spire.exe`、`assets/` 和 SFML 运行时 DLL。玩家解压后可以直接双击 exe。
 
 ## 安装 SFML
 
@@ -276,7 +311,8 @@ assets/images/
   sprites/      玩家、普通敌人、精英敌人和 Boss 透明 PNG
 
 scripts/
-  run_windows.ps1  Windows 一键构建、测试并运行脚本
+  run_windows.ps1      Windows 一键构建、测试并运行脚本
+  package_windows.ps1  Windows 免安装 zip 打包脚本
 
 tests/
   core_tests.cpp  纯规则层测试

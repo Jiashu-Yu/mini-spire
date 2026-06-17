@@ -2,6 +2,7 @@
 .vscode/
 build/
 build*/
+dist/
 out/
 CMakeUserPresets.json
 *.user
