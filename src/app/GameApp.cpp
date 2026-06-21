@@ -73,6 +73,19 @@ bool ResourceManager::load()
                  "../assets/images/backgrounds/combat_act3_star_clock_arena.png",
                  "../../assets/images/backgrounds/combat_act3_star_clock_arena.png"});
 
+    loadTexture("node_event",
+                {"assets/images/ui/node_event.png",
+                 "../assets/images/ui/node_event.png",
+                 "../../assets/images/ui/node_event.png"});
+    loadTexture("node_shop",
+                {"assets/images/ui/node_shop.png",
+                 "../assets/images/ui/node_shop.png",
+                 "../../assets/images/ui/node_shop.png"});
+    loadTexture("node_rest",
+                {"assets/images/ui/node_rest.png",
+                 "../assets/images/ui/node_rest.png",
+                 "../../assets/images/ui/node_rest.png"});
+
     loadTexture("sprite_player",
                 {"assets/images/sprites/player_rift_traveler.png",
                  "../assets/images/sprites/player_rift_traveler.png",

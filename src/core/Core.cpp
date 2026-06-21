@@ -1221,9 +1221,16 @@ void RunController::eventGainGold()
     player_.gainGold(45);
 }
 
+bool RunController::eventHealAvailable() const
+{
+    return player_.hp() < player_.maxHp();
+}
+
 void RunController::eventHeal()
 {
-    player_.heal(14);
+    if (eventHealAvailable()) {
+        player_.heal(14);
+    }
 }
 
 bool RunController::saveToFile(const std::string& path) const
@@ -1550,6 +1557,38 @@ std::string toString(StatusType type)
         return "仪式";
     }
     return "未知";
+}
+
+std::string relicDescription(const std::string& relic)
+{
+    if (relic == "晨星羽饰") {
+        return "战斗开局力量 +1。";
+    }
+    if (relic == "余烬血脉") {
+        return "战斗开局力量 +2。";
+    }
+    if (relic == "晶盾核心") {
+        return "战斗开局获得 8 格挡。";
+    }
+    if (relic == "裂纹罗盘" || relic == "铜质罗盘") {
+        return "战斗开局额外抽 1 张牌。";
+    }
+    if (relic == "余烬护符") {
+        return "战斗开局获得 6 格挡。";
+    }
+    if (relic == "晶化沙漏") {
+        return "战斗开局获得 1 能量。";
+    }
+    if (relic == "旧塔徽章") {
+        return "战斗开局回复 2 生命。";
+    }
+    if (relic == "静默钟摆") {
+        return "敌人开局获得 1 虚弱。";
+    }
+    if (relic.find("Boss 印记") != std::string::npos) {
+        return "战斗开局力量 +1。";
+    }
+    return "神秘的塔内造物，效果仍在记录中。";
 }
 
 std::vector<Card> starterDeck(CharacterId character)

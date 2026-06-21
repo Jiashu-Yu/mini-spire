@@ -1,4 +1,4 @@
-﻿#include "minispire/Core.h"
+#include "minispire/Core.h"
 #include "minispire/Layout.h"
 
 #include <algorithm>
@@ -139,6 +139,14 @@ void testRelicAppliesAtCombatStart()
     require(combat.player().status(StatusType::Strength) >= 1);
 }
 
+void testRelicDescriptionsCoverKnownAndBossRelics()
+{
+    require(relicDescription("晨星羽饰") == "战斗开局力量 +1。");
+    require(relicDescription("裂纹罗盘") == "战斗开局额外抽 1 张牌。");
+    require(relicDescription("第 2 层 Boss 印记") == "战斗开局力量 +1。");
+    require(relicDescription("不存在的圣遗物") == "神秘的塔内造物，效果仍在记录中。");
+}
+
 void testRewardsComeFromPool()
 {
     RunController run;
@@ -194,6 +202,21 @@ void testBossRecoveryFillsHealthAndClearsBlock()
     require(run.player().block() == 0);
 }
 
+void testEventHealOnlyAvailableWhenDamaged()
+{
+    RunController run;
+    run.startNewRun(42);
+    require(!run.eventHealAvailable());
+
+    run.player().receiveDamage(10);
+    require(run.eventHealAvailable());
+
+    run.recoverAfterBoss();
+    run.startNextLevel();
+    require(run.level() == 2);
+    require(!run.eventHealAvailable());
+}
+
 void testCombatLayoutKeepsPanelsSeparated()
 {
     const layout::CombatLayout combatLayout = layout::combatLayout();
@@ -220,6 +243,17 @@ void testCombatLayoutKeepsPanelsSeparated()
     require(secondPotionSlot.top + secondPotionSlot.height + 8.0F <= firstCard.top);
     require(combatLayout.enemyPanel.top + combatLayout.enemyPanel.height + 16.0F <= combatLayout.enemySpriteCenter.y);
     require(combatLayout.endTurnButton.top > combatLayout.enemyPanel.top + combatLayout.enemyPanel.height);
+}
+
+void testRelicDetailsOnlyTriggeredByTopBar()
+{
+    const layout::Rect trigger = layout::topBarRelicRect();
+    require(layout::topBarRelicTriggerContains({trigger.left + 12.0F, trigger.top + 12.0F}));
+
+    const layout::Rect details = layout::topBarRelicDetailsRect(3);
+    const layout::Vec2 detailsOnlyPoint {details.left + details.width - 24.0F, details.top + 96.0F};
+    require(detailsOnlyPoint.y > trigger.top + trigger.height);
+    require(!layout::topBarRelicTriggerContains(detailsOnlyPoint));
 }
 
 void testWindowRenderScaleMatchesLetterboxedContent()
@@ -358,11 +392,14 @@ int main()
     testRunAdvancesAcrossThreeLevels();
     testPotionSlotsUseAndDiscard();
     testRelicAppliesAtCombatStart();
+    testRelicDescriptionsCoverKnownAndBossRelics();
     testRewardsComeFromPool();
     testHandLimitDiscardsOverflow();
     testLevelTransitionClearsStatuses();
     testBossRecoveryFillsHealthAndClearsBlock();
+    testEventHealOnlyAvailableWhenDamaged();
     testCombatLayoutKeepsPanelsSeparated();
+    testRelicDetailsOnlyTriggeredByTopBar();
     testWindowRenderScaleMatchesLetterboxedContent();
     testCharacterChoicesUseDifferentCardPools();
     testShopRemovalRemovesCardAndChargesGold();

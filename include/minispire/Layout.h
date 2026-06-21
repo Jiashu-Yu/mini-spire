@@ -84,6 +84,27 @@ inline Rect combatPotionSlotRect(std::size_t index)
     return {70.0F + static_cast<float>(index) * 152.0F, 488.0F, 138.0F, 32.0F};
 }
 
+inline Rect topBarRelicRect()
+{
+    return {1018.0F, 10.0F, 184.0F, 38.0F};
+}
+
+inline Rect topBarRelicDetailsRect(std::size_t relicCount)
+{
+    const float height = 58.0F + static_cast<float>(std::min<std::size_t>(relicCount, 7)) * 45.0F;
+    return {832.0F, 64.0F, 370.0F, height};
+}
+
+inline bool contains(Rect rect, Vec2 point)
+{
+    return point.x >= rect.left && point.x < rect.left + rect.width && point.y >= rect.top && point.y < rect.top + rect.height;
+}
+
+inline bool topBarRelicTriggerContains(Vec2 point)
+{
+    return contains(topBarRelicRect(), point);
+}
+
 inline Rect spriteBounds(Vec2 center, Vec2 maxSize, float verticalOffset)
 {
     return {center.x - maxSize.x / 2.0F, center.y + verticalOffset - maxSize.y / 2.0F, maxSize.x, maxSize.y};

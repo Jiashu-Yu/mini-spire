@@ -141,6 +141,166 @@ sf::Vector2f nodePosition(const std::vector<MapNode>& nodes, const MapNode& node
     return {x, y};
 }
 
+sf::FloatRect topBarRelicRect()
+{
+    return toSf(layout::topBarRelicRect());
+}
+
+sf::FloatRect topBarRelicDetailsRect(std::size_t relicCount)
+{
+    return toSf(layout::topBarRelicDetailsRect(relicCount));
+}
+
+bool topBarRelicTriggerContains(sf::Vector2f point)
+{
+    return layout::topBarRelicTriggerContains({point.x, point.y});
+}
+
+sf::Color nodeAccentColor(NodeType type)
+{
+    switch (type) {
+    case NodeType::Battle:
+        return sf::Color(205, 215, 235);
+    case NodeType::Elite:
+        return sf::Color(255, 209, 102);
+    case NodeType::Boss:
+        return sf::Color(210, 158, 255);
+    case NodeType::Shop:
+        return sf::Color(248, 195, 91);
+    case NodeType::Rest:
+        return sf::Color(255, 126, 82);
+    case NodeType::Event:
+        return sf::Color(130, 214, 255);
+    }
+    return sf::Color::White;
+}
+
+std::string nodeTextureKey(NodeType type)
+{
+    switch (type) {
+    case NodeType::Shop:
+        return "node_shop";
+    case NodeType::Rest:
+        return "node_rest";
+    case NodeType::Event:
+        return "node_event";
+    case NodeType::Battle:
+    case NodeType::Elite:
+    case NodeType::Boss:
+        break;
+    }
+    return "";
+}
+
+bool drawNodeTexture(sf::RenderWindow& window,
+                     const ResourceManager& resources,
+                     NodeType type,
+                     sf::Vector2f center,
+                     sf::Vector2f maxSize,
+                     sf::Color tint)
+{
+    const std::string key = nodeTextureKey(type);
+    const sf::Texture* texture = key.empty() ? nullptr : resources.texture(key);
+    if (texture == nullptr) {
+        return false;
+    }
+
+    const sf::Vector2u textureSize = texture->getSize();
+    if (textureSize.x == 0 || textureSize.y == 0) {
+        return false;
+    }
+
+    sf::Sprite sprite(*texture);
+    sprite.setOrigin(static_cast<float>(textureSize.x) / 2.0F, static_cast<float>(textureSize.y) / 2.0F);
+    const float scale = std::min(maxSize.x / static_cast<float>(textureSize.x), maxSize.y / static_cast<float>(textureSize.y));
+    sprite.setScale(scale, scale);
+    sprite.setPosition(center);
+    sprite.setColor(tint);
+    window.draw(sprite);
+    return true;
+}
+
+void drawRelicGlyph(sf::RenderWindow& window, sf::Vector2f center, sf::Color color)
+{
+    sf::CircleShape glow(15.0F);
+    glow.setOrigin(15.0F, 15.0F);
+    glow.setPosition(center);
+    glow.setFillColor(sf::Color(color.r, color.g, color.b, 52));
+    window.draw(glow);
+
+    sf::ConvexShape gem;
+    gem.setPointCount(6);
+    gem.setPoint(0, {center.x, center.y - 15.0F});
+    gem.setPoint(1, {center.x + 13.0F, center.y - 5.0F});
+    gem.setPoint(2, {center.x + 9.0F, center.y + 13.0F});
+    gem.setPoint(3, {center.x, center.y + 18.0F});
+    gem.setPoint(4, {center.x - 9.0F, center.y + 13.0F});
+    gem.setPoint(5, {center.x - 13.0F, center.y - 5.0F});
+    gem.setFillColor(sf::Color(color.r, color.g, color.b, 190));
+    gem.setOutlineColor(sf::Color(244, 224, 156));
+    gem.setOutlineThickness(1.5F);
+    window.draw(gem);
+
+    sf::CircleShape core(4.5F);
+    core.setOrigin(4.5F, 4.5F);
+    core.setPosition(center.x, center.y + 2.0F);
+    core.setFillColor(sf::Color(255, 246, 190));
+    window.draw(core);
+}
+
+void drawRelicDetailsPanel(sf::RenderWindow& window, const ResourceManager& resources, const Player& player)
+{
+    if (player.relics().empty()) {
+        return;
+    }
+
+    const sf::FloatRect rect = topBarRelicDetailsRect(player.relics().size());
+    ui::drawPanel(window, rect, sf::Color(24, 27, 40, 244), ui::accentColor(), 1.5F);
+    ui::drawText(window, resources, "圣遗物", {rect.left + 22.0F, rect.top + 16.0F}, 21, ui::accentColor());
+
+    float y = rect.top + 54.0F;
+    const std::size_t visibleCount = std::min<std::size_t>(player.relics().size(), 7);
+    for (std::size_t i = 0; i < visibleCount; ++i) {
+        const std::string& relic = player.relics().at(i);
+        drawRelicGlyph(window, {rect.left + 28.0F, y + 13.0F}, sf::Color(190, 156, 240));
+        ui::drawText(window, resources, relic, {rect.left + 54.0F, y - 2.0F}, 15, sf::Color(238, 231, 255));
+        ui::drawText(window, resources, relicDescription(relic), {rect.left + 54.0F, y + 20.0F}, 12, sf::Color(199, 204, 220));
+        y += 45.0F;
+    }
+    if (player.relics().size() > visibleCount) {
+        ui::drawText(window,
+                     resources,
+                     "还有 " + std::to_string(player.relics().size() - visibleCount) + " 件圣遗物",
+                     {rect.left + 54.0F, y - 2.0F},
+                     12,
+                     sf::Color(198, 190, 222));
+    }
+}
+
+void drawNodeIcon(sf::RenderWindow& window, const ResourceManager& resources, NodeType type, sf::Vector2f center, sf::Color color);
+
+void drawLargeNodeEmblem(sf::RenderWindow& window, const ResourceManager& resources, NodeType type, sf::Vector2f center)
+{
+    const sf::Color accent = nodeAccentColor(type);
+    sf::CircleShape glow(92.0F);
+    glow.setOrigin(92.0F, 92.0F);
+    glow.setPosition(center);
+    glow.setFillColor(sf::Color(accent.r, accent.g, accent.b, 28));
+    window.draw(glow);
+
+    sf::CircleShape ring(62.0F);
+    ring.setOrigin(62.0F, 62.0F);
+    ring.setPosition(center);
+    ring.setFillColor(sf::Color(26, 30, 44, 142));
+    ring.setOutlineColor(sf::Color(accent.r, accent.g, accent.b, 170));
+    ring.setOutlineThickness(2.0F);
+    window.draw(ring);
+
+    if (!drawNodeTexture(window, resources, type, center, {104.0F, 104.0F}, sf::Color::White)) {
+        drawNodeIcon(window, resources, type, center, accent);
+    }
+}
+
 void drawSwordIcon(sf::RenderWindow& window, sf::Vector2f center, sf::Color color)
 {
     sf::RectangleShape blade({6.0F, 36.0F});
@@ -166,6 +326,10 @@ void drawSwordIcon(sf::RenderWindow& window, sf::Vector2f center, sf::Color colo
 
 void drawNodeIcon(sf::RenderWindow& window, const ResourceManager& resources, NodeType type, sf::Vector2f center, sf::Color color)
 {
+    if (drawNodeTexture(window, resources, type, center, {58.0F, 58.0F}, color)) {
+        return;
+    }
+
     switch (type) {
     case NodeType::Battle:
         drawSwordIcon(window, center, color);
@@ -607,16 +771,23 @@ void drawTopBarForPlayer(sf::RenderWindow& window, GameApp& app, const Player& p
     }
     ui::drawText(window, app.resources(), potionText, {790.0F, 18.0F}, 15, sf::Color(168, 216, 242));
 
-    std::string relicText = "圣遗物 ";
-    if (player.relics().empty()) {
-        relicText += "无";
-    } else {
-        relicText += player.relics().front();
-        if (player.relics().size() > 1) {
-            relicText += " +" + std::to_string(player.relics().size() - 1);
-        }
+    const sf::FloatRect relicRect = topBarRelicRect();
+    const sf::Vector2f mouse = window.mapPixelToCoords(sf::Mouse::getPosition(window));
+    const bool relicHovered = topBarRelicTriggerContains(mouse);
+    ui::drawPanel(window,
+                  relicRect,
+                  relicHovered ? sf::Color(43, 42, 58) : sf::Color(31, 33, 45),
+                  relicHovered ? ui::accentColor() : sf::Color(66, 66, 86),
+                  relicHovered ? 1.5F : 1.0F);
+    drawRelicGlyph(window, {relicRect.left + 22.0F, relicRect.top + 18.0F}, sf::Color(184, 151, 234));
+
+    const std::string relicText = player.relics().empty()
+                                      ? "圣遗物 无"
+                                      : "圣遗物 " + std::to_string(player.relics().size()) + " 件 v";
+    ui::drawText(window, app.resources(), relicText, {relicRect.left + 42.0F, relicRect.top + 10.0F}, 14, sf::Color(218, 207, 241));
+    if (relicHovered) {
+        drawRelicDetailsPanel(window, app.resources(), player);
     }
-    ui::drawText(window, app.resources(), relicText, {1042.0F, 18.0F}, 15, sf::Color(201, 190, 230));
 }
 
 void drawTopBar(sf::RenderWindow& window, GameApp& app)
@@ -931,25 +1102,44 @@ public:
 
         for (const MapNode& node : nodes) {
             const sf::Vector2f center = nodePosition(nodes, node);
-            sf::CircleShape circle(34.0F);
-            circle.setOrigin(34.0F, 34.0F);
+            const sf::Color accent = nodeAccentColor(node.type);
+            if (node.available && !node.completed) {
+                sf::CircleShape aura(48.0F);
+                aura.setOrigin(48.0F, 48.0F);
+                aura.setPosition(center);
+                aura.setFillColor(sf::Color(accent.r, accent.g, accent.b, 34));
+                window.draw(aura);
+            }
+
+            sf::CircleShape outer(39.0F);
+            outer.setOrigin(39.0F, 39.0F);
+            outer.setPosition(center);
+            outer.setFillColor(sf::Color(11, 13, 22, node.completed ? 116 : 162));
+            outer.setOutlineColor(node.completed ? sf::Color(113, 106, 90) : sf::Color(accent.r, accent.g, accent.b, node.available ? 210 : 88));
+            outer.setOutlineThickness(node.available && !node.completed ? 2.0F : 1.0F);
+            window.draw(outer);
+
+            sf::CircleShape circle(32.0F);
+            circle.setOrigin(32.0F, 32.0F);
             circle.setPosition(center);
             if (node.completed) {
-                circle.setFillColor(sf::Color(69, 73, 82));
-                circle.setOutlineColor(sf::Color(132, 125, 98));
+                circle.setFillColor(sf::Color(58, 61, 70, 218));
+                circle.setOutlineColor(sf::Color(142, 134, 106));
             } else if (node.available) {
-                circle.setFillColor(sf::Color(68, 84, 111));
-                circle.setOutlineColor(ui::accentColor());
+                circle.setFillColor(sf::Color(44, 55, 75, 235));
+                circle.setOutlineColor(accent);
             } else {
-                circle.setFillColor(sf::Color(35, 38, 50));
-                circle.setOutlineColor(sf::Color(75, 79, 95));
+                circle.setFillColor(sf::Color(31, 34, 46, 226));
+                circle.setOutlineColor(sf::Color(72, 76, 94));
             }
-            circle.setOutlineThickness(node.available && !node.completed ? 3.0F : 1.0F);
+            circle.setOutlineThickness(node.available && !node.completed ? 2.0F : 1.0F);
             window.draw(circle);
 
-            drawNodeIcon(window, app_.resources(), node.type, center, node.available || node.completed ? sf::Color::White : sf::Color(120, 124, 140));
-            ui::drawText(window, app_.resources(), toString(node.type), {center.x - 28.0F, center.y + 42.0F}, 14, sf::Color(218, 216, 205));
+            const sf::Color iconColor = node.available || node.completed ? sf::Color::White : sf::Color(118, 122, 140, 190);
+            drawNodeIcon(window, app_.resources(), node.type, center, iconColor);
+            ui::drawText(window, app_.resources(), toString(node.type), {center.x - 28.0F, center.y + 42.0F}, 14, sf::Color(226, 223, 211));
         }
+        drawTopBar(window, app_);
     }
 
 private:
@@ -1120,6 +1310,7 @@ public:
             ui::drawText(window, app_.resources(), combat_.victory() ? "战斗胜利" : "本次爬塔失败", {548.0F, 288.0F}, 32, combat_.victory() ? ui::accentColor() : sf::Color(255, 140, 135));
             continueButton_.draw(window, app_.resources());
         }
+        drawTopBarForPlayer(window, app_, combat_.player());
     }
 
 private:
@@ -1242,6 +1433,7 @@ public:
             ui::drawCard(window, app_.resources(), rewards_.at(i), rect, true, rect.contains(mouse));
         }
         skipButton_.draw(window, app_.resources());
+        drawTopBar(window, app_);
     }
 
 private:
@@ -1356,6 +1548,7 @@ public:
         vitalityButton_.draw(window, app_.resources());
         treasureButton_.draw(window, app_.resources());
         relicButton_.draw(window, app_.resources());
+        drawTopBar(window, app_);
     }
 
 private:
@@ -1528,6 +1721,8 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
+        drawMapBackground(window, app_.resources(), app_.runState().level());
+        drawLargeNodeEmblem(window, app_.resources(), NodeType::Shop, {178.0F, 142.0F});
         drawTopBar(window, app_);
         ui::drawText(window, app_.resources(), "商店", {604.0F, 82.0F}, 34, ui::accentColor());
         ui::drawText(window, app_.resources(), "购买卡牌、圣遗物和药水。药水槽最多 2 个。", {414.0F, 124.0F}, 18, sf::Color(214, 210, 196));
@@ -1563,6 +1758,8 @@ public:
 
         if (removingCard_) {
             drawRemovalOverlay(window, mouse);
+        } else {
+            drawTopBar(window, app_);
         }
     }
 
@@ -1623,25 +1820,6 @@ private:
         });
     }
 
-    std::string relicDescription(const std::string& relic) const
-    {
-        if (relic == "晨星羽饰") {
-            return "战斗开局力量 +1。";
-        }
-        if (relic == "裂纹罗盘") {
-            return "战斗开局额外抽 1 张牌。";
-        }
-        if (relic == "余烬护符") {
-            return "战斗开局获得 6 格挡。";
-        }
-        if (relic == "晶化沙漏") {
-            return "战斗开局获得 1 能量。";
-        }
-        if (relic == "旧塔徽章") {
-            return "战斗开局回复 2 生命。";
-        }
-        return "敌人开局获得 1 虚弱。";
-    }
 
     void drawRelicOffer(sf::RenderWindow& window, sf::Vector2f mouse, std::size_t index) const
     {
@@ -1768,12 +1946,15 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
+        drawMapBackground(window, app_.resources(), app_.runState().level());
+        drawLargeNodeEmblem(window, app_.resources(), NodeType::Rest, {300.0F, 356.0F});
         drawTopBar(window, app_);
         ui::drawText(window, app_.resources(), "休息点", {588.0F, 130.0F}, 34, ui::accentColor());
         ui::drawPanel(window, {420.0F, 210.0F, 440.0F, 300.0F}, sf::Color(35, 42, 52), sf::Color(91, 105, 124), 1.0F);
         ui::drawText(window, app_.resources(), "火光很小，但足够让你重新整理牌组与呼吸。", {462.0F, 250.0F}, 18, sf::Color(225, 220, 202));
         restButton_.draw(window, app_.resources());
         leaveButton_.draw(window, app_.resources());
+        drawTopBar(window, app_);
     }
 
 private:
@@ -1786,8 +1967,9 @@ class EventScene final : public Scene {
 public:
     explicit EventScene(GameApp& app)
         : Scene(app)
+        , middleOption_(selectMiddleOption(app.runState()))
         , goldButton_({450.0F, 292.0F, 380.0F, 48.0F}, "搜寻废墟：获得 45 金币")
-        , healButton_({450.0F, 356.0F, 380.0F, 48.0F}, "短暂冥想：回复 14 生命")
+        , middleButton_({450.0F, 356.0F, 380.0F, 48.0F}, middleButtonLabel(middleOption_))
         , cardButton_({450.0F, 420.0F, 380.0F, 48.0F}, "拾取卷轴：获得随机卡牌")
     {
     }
@@ -1797,8 +1979,8 @@ public:
         if (goldButton_.clicked(event, app_.window())) {
             app_.runState().eventGainGold();
             finish();
-        } else if (healButton_.clicked(event, app_.window())) {
-            app_.runState().eventHeal();
+        } else if (middleButton_.clicked(event, app_.window())) {
+            applyMiddleOption();
             finish();
         } else if (cardButton_.clicked(event, app_.window())) {
             app_.runState().addCardToDeck(app_.runState().makeRandomReward());
@@ -1810,27 +1992,113 @@ public:
 
     void render(sf::RenderWindow& window) override
     {
+        drawMapBackground(window, app_.resources(), app_.runState().level());
         drawTopBar(window, app_);
-        ui::drawText(window, app_.resources(), "事件：回声大厅", {510.0F, 132.0F}, 32, ui::accentColor());
-        ui::drawPanel(window, {368.0F, 205.0F, 544.0F, 320.0F}, sf::Color(33, 37, 51), sf::Color(88, 96, 119), 1.0F);
-        ui::drawText(window, app_.resources(), "石壁里传来旧时代的低语，你可以选择一种收益。", {420.0F, 244.0F}, 18, sf::Color(224, 221, 207));
+        drawLargeNodeEmblem(window, app_.resources(), NodeType::Event, {300.0F, 356.0F});
+        ui::drawText(window, app_.resources(), eventTitle(), {500.0F, 126.0F}, 32, ui::accentColor());
+        ui::drawPanel(window, {388.0F, 198.0F, 504.0F, 340.0F}, sf::Color(26, 30, 44, 232), sf::Color(91, 111, 139), 1.0F);
+        ui::drawText(window, app_.resources(), eventDescription(), {438.0F, 238.0F}, 17, sf::Color(224, 221, 207));
         goldButton_.draw(window, app_.resources());
-        healButton_.draw(window, app_.resources());
+        middleButton_.draw(window, app_.resources());
         cardButton_.draw(window, app_.resources());
+        drawTopBar(window, app_);
     }
 
 private:
+    enum class MiddleOption {
+        Heal,
+        Potion,
+        Gold
+    };
+
+    static bool hasFreePotionSlot(const RunController& run)
+    {
+        const auto& potions = run.player().potions();
+        return std::any_of(potions.begin(), potions.end(), [](const std::optional<Potion>& potion) {
+            return !potion.has_value();
+        });
+    }
+
+    static MiddleOption selectMiddleOption(const RunController& run)
+    {
+        if (run.eventHealAvailable()) {
+            return MiddleOption::Heal;
+        }
+        if (hasFreePotionSlot(run)) {
+            return MiddleOption::Potion;
+        }
+        return MiddleOption::Gold;
+    }
+
+    static std::string middleButtonLabel(MiddleOption option)
+    {
+        switch (option) {
+        case MiddleOption::Heal:
+            return "短暂冥想：回复 14 生命";
+        case MiddleOption::Potion:
+            return "封存药剂：获得随机药水";
+        case MiddleOption::Gold:
+            return "拆解旧仪器：获得 25 金币";
+        }
+        return "继续前进";
+    }
+
+    void applyMiddleOption()
+    {
+        switch (middleOption_) {
+        case MiddleOption::Heal:
+            app_.runState().eventHeal();
+            break;
+        case MiddleOption::Potion:
+            if (!app_.runState().player().addPotion(app_.runState().makeRandomPotion())) {
+                app_.runState().player().gainGold(25);
+            }
+            break;
+        case MiddleOption::Gold:
+            app_.runState().player().gainGold(25);
+            break;
+        }
+    }
+
+    std::string eventTitle() const
+    {
+        switch (app_.runState().level()) {
+        case 1:
+            return "事件：回声大厅";
+        case 2:
+            return "事件：晶壳温床";
+        case 3:
+            return "事件：星钟回廊";
+        default:
+            return "事件：未知回廊";
+        }
+    }
+
+    std::string eventDescription() const
+    {
+        switch (app_.runState().level()) {
+        case 1:
+            return "石壁里传来旧时代的低语，三条回声只允许你带走一种。";
+        case 2:
+            return "晶簇把塔内热流折成碎光，你可以截取一段有用的余辉。";
+        case 3:
+            return "星钟齿轮缓慢倒转，时间在你的掌心留下短暂馈赠。";
+        default:
+            return "雾气里浮现出旧塔馈赠，你只能选择其中之一。";
+        }
+    }
+
     void finish()
     {
         app_.runState().completeActiveNode();
         app_.changeScene(makeMapScene(app_));
     }
 
+    MiddleOption middleOption_;
     ui::Button goldButton_;
-    ui::Button healButton_;
+    ui::Button middleButton_;
     ui::Button cardButton_;
 };
-
 class VictoryScene final : public Scene {
 public:
     VictoryScene(GameApp& app, bool won)

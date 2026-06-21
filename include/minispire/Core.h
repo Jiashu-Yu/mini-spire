@@ -354,6 +354,7 @@ public:
     void recoverAfterBoss();
     void rest();
     void eventGainGold();
+    bool eventHealAvailable() const;
     void eventHeal();
     bool saveToFile(const std::string& path = "mini_spire_save.txt") const;
     bool loadFromFile(const std::string& path = "mini_spire_save.txt");
@@ -384,6 +385,7 @@ private:
 std::string toString(CardType type);
 std::string toString(NodeType type);
 std::string toString(StatusType type);
+std::string relicDescription(const std::string& relic);
 
 std::vector<CharacterDefinition> characterDefinitions();
 const CharacterDefinition& characterDefinition(CharacterId id);
